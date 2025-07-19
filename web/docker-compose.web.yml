@@ -9,7 +9,10 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      # Docker socket (works on Linux/macOS and Windows with Docker Desktop)
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Alternative for Windows (uncomment if needed)
+      # - //./pipe/docker_engine://./pipe/docker_engine
       - ../scripts:/scripts:ro
       - ../monitoring:/monitoring:ro
       - obs-config:/opt/obs-config

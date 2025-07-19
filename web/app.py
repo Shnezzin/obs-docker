@@ -24,8 +24,20 @@ SCRIPTS_DIR = '/scripts'
 CONFIG_DIR = '/opt/obs-config'
 INSTANCES_DIR = '/opt/obs-instances'
 
-# Docker client
-docker_client = docker.from_env()
+# Docker client with error handling
+try:
+    # Try to connect to Docker daemon
+    print("🔄 Attempting to connect to Docker daemon...")
+    docker_client = docker.from_env()
+    # Test the connection
+    docker_client.ping()
+    print("✅ Docker client connected successfully")
+    print(f"📊 Docker version: {docker_client.version()['Version']}")
+except Exception as e:
+    print(f"⚠️ Docker client connection failed: {e}")
+    print("📝 This is normal if running locally without Docker socket access")
+    print("🔧 Running in standalone mode - system monitoring only")
+    docker_client = None
 
 class OBSManager:
     def __init__(self):
@@ -45,32 +57,36 @@ class OBSManager:
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Container stats
-            containers = docker_client.containers.list(all=True)
-            self.containers = {}
-            
-            for container in containers:
-                if 'obs' in container.name.lower():
-                    stats = {
-                        'name': container.name,
-                        'status': container.status,
-                        'image': container.image.tags[0] if container.image.tags else 'unknown',
-                        'created': container.attrs['Created'],
-                        'ports': container.ports,
-                        'labels': container.labels
-                    }
-                    
-                    # Get container stats if running
-                    if container.status == 'running':
-                        try:
-                            container_stats = container.stats(stream=False)
-                            stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
-                            stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
-                            stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
-                        except:
-                            pass
-                    
-                    self.containers[container.name] = stats
+            # Container stats (only if Docker client is available)
+            if docker_client:
+                containers = docker_client.containers.list(all=True)
+                self.containers = {}
+                
+                for container in containers:
+                    if 'obs' in container.name.lower():
+                        stats = {
+                            'name': container.name,
+                            'status': container.status,
+                            'image': container.image.tags[0] if container.image.tags else 'unknown',
+                            'created': container.attrs['Created'],
+                            'ports': container.ports,
+                            'labels': container.labels
+                        }
+                        
+                        # Get container stats if running
+                        if container.status == 'running':
+                            try:
+                                container_stats = container.stats(stream=False)
+                                stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
+                                stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
+                                stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
+                            except:
+                                pass
+                        
+                        self.containers[container.name] = stats
+            else:
+                # Standalone mode - no container stats
+                self.containers = {}
                     
         except Exception as e:
             print(f"Error updating stats: {e}")
@@ -125,6 +141,8 @@ def api_containers():
 @app.route('/api/container/<container_name>/start', methods=['POST'])
 def start_container(container_name):
     """Start a container"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = docker_client.containers.get(container_name)
         container.start()
@@ -135,6 +153,8 @@ def start_container(container_name):
 @app.route('/api/container/<container_name>/stop', methods=['POST'])
 def stop_container(container_name):
     """Stop a container"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = docker_client.containers.get(container_name)
         container.stop()
@@ -145,6 +165,8 @@ def stop_container(container_name):
 @app.route('/api/container/<container_name>/restart', methods=['POST'])
 def restart_container(container_name):
     """Restart a container"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = docker_client.containers.get(container_name)
         container.restart()
@@ -155,6 +177,8 @@ def restart_container(container_name):
 @app.route('/api/container/<container_name>/logs')
 def container_logs(container_name):
     """Get container logs"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = docker_client.containers.get(container_name)
         logs = container.logs(tail=100).decode('utf-8')
