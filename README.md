@@ -31,10 +31,14 @@ A comprehensive, enterprise-ready Docker solution for OBS Studio with advanced m
 git clone https://github.com/Shnezzin/obs-docker.git
 cd obs-docker
 
-# Start the web management interface
+# Method A: Using Docker (Recommended)
 cd web/
 chmod +x start-web-manager.sh
 ./start-web-manager.sh start
+
+# Method B: Local Python (if Docker issues)
+./start-web-manager.sh setup    # Fix Python dependencies
+./start-web-manager.sh local     # Run without Docker
 
 # Access the web dashboard
 # Open http://localhost:8080 in your browser
@@ -114,14 +118,43 @@ The comprehensive web dashboard provides complete control over your OBS Docker e
 - **Backup & Recovery** - Automated backup scheduling and restoration
 - **Settings** - System configuration and security management
 
-### Access
+### Quick Setup
+
+**🚀 Fastest Method (Docker):**
 ```bash
-# Start the web interface
 cd web/
 ./start-web-manager.sh start
+# Open http://localhost:8080
+```
 
-# Open in browser
-http://localhost:8080
+**🐍 Alternative Method (Local Python):**
+```bash
+cd web/
+./start-web-manager.sh setup    # Fix Python dependencies
+./start-web-manager.sh local     # Run without Docker
+# Open http://localhost:8080
+```
+
+**🔧 Manual Setup (If needed):**
+```bash
+cd web/
+python setup-local.py           # Fix compatibility issues
+python app.py                    # Start application
+# Open http://localhost:8080
+```
+
+### Available Commands
+
+```bash
+# Web Manager Control Commands
+./start-web-manager.sh start     # Start with Docker
+./start-web-manager.sh stop      # Stop web manager
+./start-web-manager.sh restart   # Restart web manager
+./start-web-manager.sh status    # Check status
+./start-web-manager.sh logs      # View logs
+./start-web-manager.sh setup     # Setup Python environment
+./start-web-manager.sh local     # Run locally without Docker
+./start-web-manager.sh help      # Show all commands
 ```
 
 ## 🖥️ Direct RDP Access
@@ -253,6 +286,15 @@ docker-compose -f docker-compose.monitoring.yml up -d
 ## 🛠️ Troubleshooting
 
 ### Web Interface Issues
+
+**Python compatibility error (`ModuleNotFoundError: No module named 'distutils'`):**
+```bash
+cd web/
+./start-web-manager.sh setup    # Fix Python dependencies
+./start-web-manager.sh local     # Run without Docker
+```
+
+**Web interface won't start:**
 ```bash
 # Check web manager status
 ./web/start-web-manager.sh status
@@ -262,6 +304,19 @@ docker-compose -f docker-compose.monitoring.yml up -d
 
 # Restart web interface
 ./web/start-web-manager.sh restart
+
+# Try local method if Docker fails
+./web/start-web-manager.sh setup
+./web/start-web-manager.sh local
+```
+
+**Port 8080 already in use:**
+```bash
+# Check what's using the port
+netstat -ano | findstr :8080     # Windows
+lsof -i :8080                    # Linux/macOS
+
+# Stop conflicting service or change port in app.py
 ```
 
 ### Container Issues

@@ -60,6 +60,27 @@ check_prerequisites() {
     success "Prerequisites check passed"
 }
 
+# Setup local Python environment
+setup_local() {
+    log "Setting up local Python environment..."
+    
+    # Check if Python is available
+    if ! command -v python3 &> /dev/null && ! command -v python &> /dev/null; then
+        error "Python is not installed or not in PATH"
+        exit 1
+    fi
+    
+    # Run local setup script
+    if [ -f "setup-local.py" ]; then
+        python3 setup-local.py 2>/dev/null || python setup-local.py
+    else
+        error "setup-local.py not found"
+        exit 1
+    fi
+    
+    success "Local environment setup completed"
+}
+
 # Build the web manager image
 build_image() {
     log "Building OBS Web Manager image..."
@@ -155,20 +176,50 @@ show_help() {
     echo "Usage: $0 [COMMAND]"
     echo ""
     echo "Commands:"
-    echo "  start     Start the web manager"
+    echo "  start     Start the web manager (Docker)"
     echo "  stop      Stop the web manager"
     echo "  restart   Restart the web manager"
     echo "  status    Show status"
     echo "  logs      Show logs (follow mode)"
     echo "  build     Build the web manager image"
     echo "  update    Update and restart the web manager"
+    echo "  setup     Setup local Python environment"
+    echo "  local     Run web manager locally (without Docker)"
     echo "  help      Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0 start    # Start the web manager"
+    echo "  $0 start    # Start with Docker"
+    echo "  $0 setup    # Setup local Python environment"
+    echo "  $0 local    # Run locally without Docker"
     echo "  $0 logs     # Follow the logs"
     echo "  $0 status   # Check if running"
     echo ""
+    echo "Troubleshooting:"
+    echo "  If you get 'ModuleNotFoundError: No module named distutils':"
+    echo "  1. Run: $0 setup"
+    echo "  2. Then: $0 local"
+    echo ""
+}
+
+# Run locally without Docker
+run_local() {
+    log "Starting OBS Web Manager locally..."
+    
+    # Check if dependencies are installed
+    if ! python3 -c "import flask" 2>/dev/null && ! python -c "import flask" 2>/dev/null; then
+        warning "Flask not found. Running setup first..."
+        setup_local
+    fi
+    
+    # Start the application
+    log "Starting Flask application..."
+    log "Web interface will be available at: http://localhost:8080"
+    
+    if command -v python3 &> /dev/null; then
+        python3 app.py
+    else
+        python app.py
+    fi
 }
 
 # Main script logic
@@ -198,6 +249,12 @@ main() {
         update)
             check_prerequisites
             update_manager
+            ;;
+        setup)
+            setup_local
+            ;;
+        local)
+            run_local
             ;;
         help|--help|-h)
             show_help
