@@ -1,7 +1,18 @@
-FROM ubuntu:22.04 as build
+# Build arguments for customization
+ARG OBS_VERSION=31.1.1
+ARG UBUNTU_VERSION=24.04
+ARG LOCALE=en_US.UTF-8
+ARG TIMEZONE=UTC
+ARG DESKTOP_ENV=lxde
+ARG ENABLE_GPU=false
+ARG ADDITIONAL_APT_GET_OPTS="--no-install-recommends"
+
+# Build stage for su-exec utility
+FROM ubuntu:${UBUNTU_VERSION} as build
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y make gcc
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y make gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /opt/su-exec
 COPY su-exec.c /opt/su-exec/
@@ -12,11 +23,20 @@ RUN cd /opt/su-exec \
 
 ####################################
 
-FROM ubuntu:22.04
+# Main image
+FROM ubuntu:${UBUNTU_VERSION}
 
-ARG ADDITIONAL_APT_GET_OPTS="--no-install-recommends"
+# Copy build arguments to environment for runtime access
+ARG LOCALE
+ARG TIMEZONE
+ARG OBS_VERSION
+ARG ADDITIONAL_APT_GET_OPTS
 
-RUN echo 'path-include=/usr/share/locale/de/LC_MESSAGES/*.mo' > /etc/dpkg/dpkg.cfg.d/includes \
+# Create non-root user early for security
+RUN groupadd -r xrdp && useradd -r -g xrdp xrdp
+
+# Configure locale path based on build argument
+RUN echo "path-include=/usr/share/locale/${LOCALE%.*}/LC_MESSAGES/*.mo" > /etc/dpkg/dpkg.cfg.d/includes \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y $ADDITIONAL_APT_GET_OPTS \
       dbus-x11 \
@@ -27,9 +47,8 @@ RUN echo 'path-include=/usr/share/locale/de/LC_MESSAGES/*.mo' > /etc/dpkg/dpkg.c
       ibus-gtk4 \
       ibus-mozc \
       im-config \
-      language-pack-de \
-      language-pack-de-base \
-      lxde \
+      language-pack-en \
+      language-pack-en-base \
       qt6-base-dev \
       sudo \
       supervisor \
@@ -37,27 +56,50 @@ RUN echo 'path-include=/usr/share/locale/de/LC_MESSAGES/*.mo' > /etc/dpkg/dpkg.c
       wget \
       xorg \
       xorgxrdp \
-      xrdp
+      xrdp \
+      curl \
+      jq \
+      bc \
+      netstat-nat \
+      nginx \
+      openssl \
+      ca-certificates \
+    && if [ "$ENABLE_GPU" = "true" ]; then \
+         apt-get install -y \
+           nvidia-utils-535 \
+           libnvidia-encode-535 \
+           mesa-utils \
+           vainfo \
+           intel-media-va-driver \
+           i965-va-driver || true; \
+       fi \
+    && case "$DESKTOP_ENV" in \
+         "lxde") apt-get install -y lxde ;; \
+         "xfce") apt-get install -y xfce4 xfce4-goodies ;; \
+         "kde") apt-get install -y kde-plasma-desktop ;; \
+         "gnome") apt-get install -y gnome-session gnome-terminal ;; \
+         *) apt-get install -y lxde ;; \
+       esac
 
 COPY --from=build \
     /opt/su-exec/su-exec /usr/sbin/su-exec
 
-# Set locale
-RUN cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime \
-    && echo 'Europe/Berlin' > /etc/timezone
-RUN locale-gen de_DE.UTF-8 \
-    && echo 'LC_ALL=de_DE.UTF-8' > /etc/default/locale \
-    && echo 'LANG=de_DE.UTF-8' >> /etc/default/locale
-ENV LANG=de_DE.UTF-8 \
-    LANGUAGE=de_DE:ja \
-    LC_ALL=de_DE.UTF-8
+# Set timezone and locale dynamically
+RUN cp /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
+    && echo "${TIMEZONE}" > /etc/timezone
+RUN locale-gen ${LOCALE} \
+    && echo "LC_ALL=${LOCALE}" > /etc/default/locale \
+    && echo "LANG=${LOCALE}" >> /etc/default/locale
+ENV LANG=${LOCALE} \
+    LANGUAGE=${LOCALE%.*}:ja \
+    LC_ALL=${LOCALE}
 
 # Set default vars
 ENV DEFAULT_USER=developer \
     DEFAULT_PASSWD=xrdppasswd
 
-# Set sudoers for any user
-RUN echo "ALL ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/ALL
+# Set more restrictive sudoers - only allow specific commands
+RUN echo "ALL ALL=(ALL) NOPASSWD: /usr/sbin/useradd, /usr/sbin/groupadd, /usr/bin/chpasswd" >> /etc/sudoers.d/LIMITED
 
 # Change permission so that non-root user can add users and groups
 RUN chmod u+s /usr/sbin/useradd \
@@ -92,16 +134,42 @@ RUN { \
       echo "user=xrdp"; \
     } > /etc/supervisor/xrdp.conf
 
-# Install OBS
+# Install OBS with architecture detection
+WORKDIR /tmp
 
-WORKDIR /root
-RUN wget https://github.com/Pi-Apps-Coders/files/releases/download/large-files/obs-studio-30.0.0-1-arm64-jammy.deb \
-  && apt install -y /root/obs-studio-30.0.0-1-arm64-jammy.deb
+# Install OBS Studio using official repositories and Flatpak for better multi-arch support
+RUN ARCH=$(dpkg --print-architecture) \
+    && echo "Installing OBS Studio ${OBS_VERSION} for architecture: $ARCH" \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+       flatpak \
+       software-properties-common \
+       gpg-agent \
+    && flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo \
+    && if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "arm64" ]; then \
+         # Try official PPA first (Ubuntu 24.04+)
+         add-apt-repository -y ppa:obsproject/obs-studio || true; \
+         apt-get update || true; \
+         apt-get install -y obs-studio || \
+         # Fallback to Flatpak if PPA fails
+         flatpak install -y flathub com.obsproject.Studio; \
+       else \
+         # For other architectures, use Flatpak
+         flatpak install -y flathub com.obsproject.Studio; \
+       fi \
+    && rm -rf /var/lib/apt/lists/*
 RUN apt-get clean \
     && rm -rf /var/cache/apt/archives/* \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy entrypoint script
+# Copy scripts
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY scripts/ /scripts/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /scripts/*.sh
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD /scripts/health-check.sh
+
 ENTRYPOINT ["docker-entrypoint.sh"]

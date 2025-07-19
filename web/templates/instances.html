@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+
+{% block title %}Instances - OBS Docker Manager{% endblock %}
+{% block page_title %}Instance Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">OBS Instances</h5>
+                <div>
+                    <button class="btn btn-primary btn-custom me-2" onclick="showCreateInstance()">
+                        <i class="fas fa-plus"></i> Create Instance
+                    </button>
+                    <button class="btn btn-secondary btn-custom" onclick="refreshInstances()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="instancesTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Template</th>
+                                <th>User</th>
+                                <th>RDP Port</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="instancesTableBody">
+                            <!-- Instances will be loaded via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Instance Templates -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Available Templates</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-sm-6 mb-3">
+                        <div class="card border-primary">
+                            <div class="card-body text-center">
+                                <i class="fas fa-broadcast-tower fa-2x text-primary mb-2"></i>
+                                <h6>Streaming</h6>
+                                <p class="small text-muted">Optimized for live streaming</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 mb-3">
+                        <div class="card border-success">
+                            <div class="card-body text-center">
+                                <i class="fas fa-record-vinyl fa-2x text-success mb-2"></i>
+                                <h6>Recording</h6>
+                                <p class="small text-muted">High quality recording setup</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 mb-3">
+                        <div class="card border-warning">
+                            <div class="card-body text-center">
+                                <i class="fas fa-memory fa-2x text-warning mb-2"></i>
+                                <h6>Low Resource</h6>
+                                <p class="small text-muted">Minimal resource usage</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 mb-3">
+                        <div class="card border-info">
+                            <div class="card-body text-center">
+                                <i class="fas fa-microchip fa-2x text-info mb-2"></i>
+                                <h6>GPU Accelerated</h6>
+                                <p class="small text-muted">Hardware acceleration enabled</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Bulk Operations</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success btn-custom" onclick="startAllInstances()">
+                        <i class="fas fa-play-circle"></i> Start All Instances
+                    </button>
+                    <button class="btn btn-warning btn-custom" onclick="stopAllInstances()">
+                        <i class="fas fa-stop-circle"></i> Stop All Instances
+                    </button>
+                    <button class="btn btn-info btn-custom" onclick="scaleInstances()">
+                        <i class="fas fa-expand-arrows-alt"></i> Scale Instances
+                    </button>
+                    <button class="btn btn-danger btn-custom" onclick="cleanupInstances()">
+                        <i class="fas fa-trash"></i> Cleanup Stopped
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Instance Modal -->
+<div class="modal fade" id="createInstanceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New Instance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createInstanceForm">
+                    <div class="mb-3">
+                        <label for="instanceName" class="form-label">Instance Name</label>
+                        <input type="text" class="form-control" id="instanceName" required>
+                        <div class="form-text">Must be unique and contain only alphanumeric characters and hyphens</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instanceTemplate" class="form-label">Template</label>
+                        <select class="form-select" id="instanceTemplate" required>
+                            <option value="">Select a template...</option>
+                            <option value="streaming">Streaming - Optimized for live streaming</option>
+                            <option value="recording">Recording - High quality recording</option>
+                            <option value="low-resource">Low Resource - Minimal usage</option>
+                            <option value="gpu-accelerated">GPU Accelerated - Hardware acceleration</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instanceUser" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="instanceUser" value="developer" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instancePassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="instancePassword" required>
+                        <div class="form-text">Minimum 8 characters with mixed case, numbers, and symbols</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="instancePort" class="form-label">RDP Port (Optional)</label>
+                        <input type="number" class="form-control" id="instancePort" min="3390" max="65535">
+                        <div class="form-text">Leave empty for auto-assignment</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createInstance()">Create Instance</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scale Instances Modal -->
+<div class="modal fade" id="scaleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Scale Instances</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="scaleForm">
+                    <div class="mb-3">
+                        <label for="scaleTemplate" class="form-label">Template</label>
+                        <select class="form-select" id="scaleTemplate" required>
+                            <option value="streaming">Streaming</option>
+                            <option value="recording">Recording</option>
+                            <option value="low-resource">Low Resource</option>
+                            <option value="gpu-accelerated">GPU Accelerated</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="scaleCount" class="form-label">Number of Instances</label>
+                        <input type="number" class="form-control" id="scaleCount" min="1" max="10" value="2" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="scalePrefix" class="form-label">Name Prefix</label>
+                        <input type="text" class="form-control" id="scalePrefix" value="obs-instance" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="performScale()">Scale</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let instances = {};
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        loadInstances();
+    });
+    
+    async function loadInstances() {
+        try {
+            const result = await apiCall('/api/instances');
+            instances = result;
+            updateInstancesTable();
+        } catch (error) {
+            console.error('Error loading instances:', error);
+            showToast('Failed to load instances', 'danger');
+        }
+    }
+    
+    function updateInstancesTable() {
+        const tbody = document.getElementById('instancesTableBody');
+        tbody.innerHTML = '';
+        
+        if (Object.keys(instances).length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        <i class="fas fa-info-circle"></i> No instances found. Create your first instance to get started.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        Object.entries(instances).forEach(([name, instance]) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${name}</strong></td>
+                <td>
+                    <span class="badge bg-${getStatusColor(instance.status)}">
+                        <i class="fas fa-${getStatusIcon(instance.status)}"></i>
+                        ${instance.status}
+                    </span>
+                </td>
+                <td>
+                    <span class="badge bg-secondary">${instance.template || 'Unknown'}</span>
+                </td>
+                <td>${instance.user || 'N/A'}</td>
+                <td>
+                    ${instance.rdp_port ? `<code>${instance.rdp_port}</code>` : '<span class="text-muted">N/A</span>'}
+                </td>
+                <td>${instance.created || 'Unknown'}</td>
+                <td>
+                    <div class="btn-group" role="group">
+                        ${instance.status === 'running' ? `
+                            <button class="btn btn-sm btn-warning" onclick="stopInstance('${name}')" title="Stop">
+                                <i class="fas fa-stop"></i>
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="restartInstance('${name}')" title="Restart">
+                                <i class="fas fa-redo"></i>
+                            </button>
+                        ` : `
+                            <button class="btn btn-sm btn-success" onclick="startInstance('${name}')" title="Start">
+                                <i class="fas fa-play"></i>
+                            </button>
+                        `}
+                        <button class="btn btn-sm btn-primary" onclick="connectInstance('${name}')" title="Connect">
+                            <i class="fas fa-desktop"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="removeInstance('${name}')" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+    
+    function getStatusColor(status) {
+        switch (status) {
+            case 'running': return 'success';
+            case 'stopped': case 'exited': return 'danger';
+            case 'paused': return 'warning';
+            default: return 'secondary';
+        }
+    }
+    
+    function getStatusIcon(status) {
+        switch (status) {
+            case 'running': return 'play';
+            case 'stopped': case 'exited': return 'stop';
+            case 'paused': return 'pause';
+            default: return 'question';
+        }
+    }
+    
+    async function refreshInstances() {
+        await loadInstances();
+        showToast('Instances refreshed', 'success');
+    }
+    
+    function showCreateInstance() {
+        const modal = new bootstrap.Modal(document.getElementById('createInstanceModal'));
+        modal.show();
+    }
+    
+    async function createInstance() {
+        const form = document.getElementById('createInstanceForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const data = {
+            name: document.getElementById('instanceName').value,
+            template: document.getElementById('instanceTemplate').value,
+            user: document.getElementById('instanceUser').value,
+            password: document.getElementById('instancePassword').value,
+            port: document.getElementById('instancePort').value || null
+        };
+        
+        try {
+            const result = await apiCall('/api/instances/create', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('createInstanceModal')).hide();
+            form.reset();
+            await loadInstances();
+        } catch (error) {
+            console.error('Error creating instance:', error);
+        }
+    }
+    
+    async function startInstance(name) {
+        try {
+            const result = await apiCall(`/api/instances/${name}/start`, { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error starting instance:', error);
+        }
+    }
+    
+    async function stopInstance(name) {
+        try {
+            const result = await apiCall(`/api/instances/${name}/stop`, { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error stopping instance:', error);
+        }
+    }
+    
+    async function restartInstance(name) {
+        try {
+            const result = await apiCall(`/api/instances/${name}/restart`, { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error restarting instance:', error);
+        }
+    }
+    
+    async function removeInstance(name) {
+        if (!confirm(`Are you sure you want to remove instance "${name}"? This action cannot be undone.`)) {
+            return;
+        }
+        
+        try {
+            const result = await apiCall(`/api/instances/${name}/remove`, { method: 'DELETE' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error removing instance:', error);
+        }
+    }
+    
+    function connectInstance(name) {
+        const instance = instances[name];
+        if (instance && instance.rdp_port) {
+            const rdpUrl = `rdp://localhost:${instance.rdp_port}`;
+            showToast(`RDP connection: localhost:${instance.rdp_port}`, 'info');
+            
+            try {
+                window.open(rdpUrl);
+            } catch (e) {
+                console.log('Could not auto-open RDP client');
+            }
+        } else {
+            showToast('No RDP port available for this instance', 'warning');
+        }
+    }
+    
+    // Bulk operations
+    async function startAllInstances() {
+        const stoppedInstances = Object.entries(instances).filter(([name, instance]) => instance.status !== 'running');
+        
+        if (stoppedInstances.length === 0) {
+            showToast('All instances are already running', 'info');
+            return;
+        }
+        
+        for (const [name, instance] of stoppedInstances) {
+            try {
+                await apiCall(`/api/instances/${name}/start`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Error starting ${name}:`, error);
+            }
+        }
+        
+        showToast(`Started ${stoppedInstances.length} instances`, 'success');
+        await loadInstances();
+    }
+    
+    async function stopAllInstances() {
+        const runningInstances = Object.entries(instances).filter(([name, instance]) => instance.status === 'running');
+        
+        if (runningInstances.length === 0) {
+            showToast('No running instances to stop', 'info');
+            return;
+        }
+        
+        for (const [name, instance] of runningInstances) {
+            try {
+                await apiCall(`/api/instances/${name}/stop`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Error stopping ${name}:`, error);
+            }
+        }
+        
+        showToast(`Stopped ${runningInstances.length} instances`, 'success');
+        await loadInstances();
+    }
+    
+    function scaleInstances() {
+        const modal = new bootstrap.Modal(document.getElementById('scaleModal'));
+        modal.show();
+    }
+    
+    async function performScale() {
+        const template = document.getElementById('scaleTemplate').value;
+        const count = parseInt(document.getElementById('scaleCount').value);
+        const prefix = document.getElementById('scalePrefix').value;
+        
+        try {
+            const result = await apiCall('/api/instances/scale', {
+                method: 'POST',
+                body: JSON.stringify({ template, count, prefix })
+            });
+            
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('scaleModal')).hide();
+            await loadInstances();
+        } catch (error) {
+            console.error('Error scaling instances:', error);
+        }
+    }
+    
+    async function cleanupInstances() {
+        if (!confirm('This will remove all stopped instances. Are you sure?')) {
+            return;
+        }
+        
+        const stoppedInstances = Object.entries(instances).filter(([name, instance]) => instance.status !== 'running');
+        
+        if (stoppedInstances.length === 0) {
+            showToast('No stopped instances to cleanup', 'info');
+            return;
+        }
+        
+        for (const [name, instance] of stoppedInstances) {
+            try {
+                await apiCall(`/api/instances/${name}/remove`, { method: 'DELETE' });
+            } catch (error) {
+                console.error(`Error removing ${name}:`, error);
+            }
+        }
+        
+        showToast(`Cleaned up ${stoppedInstances.length} instances`, 'success');
+        await loadInstances();
+    }
+</script>
+{% endblock %}

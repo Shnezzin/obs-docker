@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - OBS Docker Manager{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- System Metrics Cards -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">CPU Usage</div>
+                        <div class="h5 mb-0 font-weight-bold" id="cpu-usage">
+                            {{ "%.1f"|format(system_stats.cpu_percent or 0) }}%
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-microchip fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Memory Usage</div>
+                        <div class="h5 mb-0 font-weight-bold" id="memory-usage">
+                            {{ "%.1f"|format((system_stats.memory.percent or 0)) }}%
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-memory fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Active Containers</div>
+                        <div class="h5 mb-0 font-weight-bold" id="active-containers">
+                            {{ containers|selectattr("status", "equalto", "running")|list|length }}
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-cube fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Total Containers</div>
+                        <div class="h5 mb-0 font-weight-bold" id="total-containers">
+                            {{ containers|length }}
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-layer-group fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- System Performance Chart -->
+    <div class="col-xl-8 col-lg-7">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">System Performance</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-area">
+                    <canvas id="systemChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Container Status -->
+    <div class="col-xl-4 col-lg-5">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Container Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-pie pt-4 pb-2">
+                    <canvas id="containerChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Containers -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Recent Containers</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered" id="containersTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Image</th>
+                        <th>Created</th>
+                        <th>Ports</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for name, container in containers.items() %}
+                    <tr>
+                        <td>{{ container.name }}</td>
+                        <td>
+                            <span class="badge bg-{% if container.status == 'running' %}success{% elif container.status == 'exited' %}danger{% else %}warning{% endif %}">
+                                {{ container.status|title }}
+                            </span>
+                        </td>
+                        <td>{{ container.image }}</td>
+                        <td>{{ container.created[:19] if container.created else 'Unknown' }}</td>
+                        <td>
+                            {% if container.ports %}
+                                {% for port_info in container.ports.values() %}
+                                    {% if port_info %}
+                                        {{ port_info[0].HostPort }}:{{ port_info[0].HostIp or 'all' }}<br>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                No ports exposed
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                {% if container.status == 'running' %}
+                                    <button class="btn btn-sm btn-warning" onclick="stopContainer('{{ container.name }}')">
+                                        <i class="fas fa-stop"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-info" onclick="restartContainer('{{ container.name }}')">
+                                        <i class="fas fa-redo"></i>
+                                    </button>
+                                {% else %}
+                                    <button class="btn btn-sm btn-success" onclick="startContainer('{{ container.name }}')">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-secondary" onclick="viewLogs('{{ container.name }}')">
+                                    <i class="fas fa-file-alt"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Container Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="logsContent" style="max-height: 400px; overflow-y: auto; background-color: #f8f9fa; padding: 1rem; border-radius: 0.375rem;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // System performance chart
+    let systemChart;
+    let containerChart;
+    
+    // Initialize charts
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCharts();
+    });
+    
+    function initializeCharts() {
+        // System Performance Chart
+        const systemCtx = document.getElementById('systemChart').getContext('2d');
+        systemChart = new Chart(systemCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1
+                }, {
+                    label: 'Memory Usage (%)',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true
+                    }
+                }
+            }
+        });
+        
+        // Container Status Chart
+        const containerCtx = document.getElementById('containerChart').getContext('2d');
+        const containerData = getContainerStatusData();
+        
+        containerChart = new Chart(containerCtx, {
+            type: 'doughnut',
+            data: {
+                labels: containerData.labels,
+                datasets: [{
+                    data: containerData.data,
+                    backgroundColor: [
+                        '#28a745',
+                        '#dc3545',
+                        '#ffc107',
+                        '#6c757d'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+    
+    function getContainerStatusData() {
+        const containers = {{ containers|tojson }};
+        const statusCounts = {};
+        
+        Object.values(containers).forEach(container => {
+            const status = container.status;
+            statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+        
+        return {
+            labels: Object.keys(statusCounts),
+            data: Object.values(statusCounts)
+        };
+    }
+    
+    // Update stats from WebSocket
+    function updateStats(data) {
+        if (data.system) {
+            // Update metric cards
+            document.getElementById('cpu-usage').textContent = data.system.cpu_percent.toFixed(1) + '%';
+            document.getElementById('memory-usage').textContent = data.system.memory.percent.toFixed(1) + '%';
+            
+            // Update system chart
+            const now = new Date().toLocaleTimeString();
+            systemChart.data.labels.push(now);
+            systemChart.data.datasets[0].data.push(data.system.cpu_percent);
+            systemChart.data.datasets[1].data.push(data.system.memory.percent);
+            
+            // Keep only last 20 data points
+            if (systemChart.data.labels.length > 20) {
+                systemChart.data.labels.shift();
+                systemChart.data.datasets[0].data.shift();
+                systemChart.data.datasets[1].data.shift();
+            }
+            
+            systemChart.update('none');
+        }
+        
+        if (data.containers) {
+            // Update container counts
+            const runningCount = Object.values(data.containers).filter(c => c.status === 'running').length;
+            const totalCount = Object.keys(data.containers).length;
+            
+            document.getElementById('active-containers').textContent = runningCount;
+            document.getElementById('total-containers').textContent = totalCount;
+            
+            // Update container chart
+            const containerData = getContainerStatusDataFromUpdate(data.containers);
+            containerChart.data.labels = containerData.labels;
+            containerChart.data.datasets[0].data = containerData.data;
+            containerChart.update();
+        }
+    }
+    
+    function getContainerStatusDataFromUpdate(containers) {
+        const statusCounts = {};
+        
+        Object.values(containers).forEach(container => {
+            const status = container.status;
+            statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+        
+        return {
+            labels: Object.keys(statusCounts),
+            data: Object.values(statusCounts)
+        };
+    }
+    
+    // Container management functions
+    async function startContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/start`, { method: 'POST' });
+            showToast(result.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } catch (error) {
+            console.error('Error starting container:', error);
+        }
+    }
+    
+    async function stopContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/stop`, { method: 'POST' });
+            showToast(result.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } catch (error) {
+            console.error('Error stopping container:', error);
+        }
+    }
+    
+    async function restartContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/restart`, { method: 'POST' });
+            showToast(result.message, 'success');
+            setTimeout(() => location.reload(), 1000);
+        } catch (error) {
+            console.error('Error restarting container:', error);
+        }
+    }
+    
+    async function viewLogs(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/logs`);
+            document.getElementById('logsContent').textContent = result.logs;
+            const modal = new bootstrap.Modal(document.getElementById('logsModal'));
+            modal.show();
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+</script>
+{% endblock %}

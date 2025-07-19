@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  obs-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - OBS_VERSION=${OBS_VERSION:-31.1.1}
+        - UBUNTU_VERSION=${UBUNTU_VERSION:-24.04}
+        - LOCALE=${LOCALE:-en_US.UTF-8}
+        - TIMEZONE=${TIMEZONE:-UTC}
+        - ADDITIONAL_APT_GET_OPTS=--no-install-recommends
+    container_name: obs-studio-container
+    restart: unless-stopped
+    
+    ports:
+      - "3389:3389"  # RDP port
+      - "4455:4455"  # Additional port for OBS plugins
+    
+    volumes:
+      - ./home:/home:rw
+      - obs-config:/opt/obs-config
+    
+    environment:
+      - USER=${OBS_USER:-developer}
+      - PASSWD=${OBS_PASSWD:-SecurePassword123!}
+      - GROUP=${OBS_GROUP:-developer}
+      - DISPLAY=:1
+      - TZ=${TIMEZONE:-UTC}
+      - LANG=${LOCALE:-en_US.UTF-8}
+    
+    # Health check to ensure services are running
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "xrdp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Resource limits (adjusted for modern systems)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+volumes:
+  obs-config:
+    driver: local

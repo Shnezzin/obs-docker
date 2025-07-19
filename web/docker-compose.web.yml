@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  obs-web-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: obs-web-manager
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../scripts:/scripts:ro
+      - ../monitoring:/monitoring:ro
+      - obs-config:/opt/obs-config
+      - obs-instances:/opt/obs-instances
+      - obs-backups:/opt/obs-backups
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+      - SCRIPTS_DIR=/scripts
+      - CONFIG_DIR=/opt/obs-config
+      - INSTANCES_DIR=/opt/obs-instances
+      - BACKUPS_DIR=/opt/obs-backups
+    networks:
+      - obs-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/system/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.obs-docker.service=web-manager"
+      - "com.obs-docker.version=2.0.0"
+
+volumes:
+  obs-config:
+    driver: local
+  obs-instances:
+    driver: local
+  obs-backups:
+    driver: local
+
+networks:
+  obs-network:
+    driver: bridge
+    name: obs-network

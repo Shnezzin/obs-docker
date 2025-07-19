@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}Plugins - OBS Docker Manager{% endblock %}
+{% block page_title %}Plugin Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">OBS Plugins</h5>
+                <div>
+                    <button class="btn btn-success btn-custom me-2" onclick="showInstallPlugin()">
+                        <i class="fas fa-plus"></i> Install Plugin
+                    </button>
+                    <button class="btn btn-secondary btn-custom" onclick="refreshPlugins()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row" id="pluginsGrid">
+                    <!-- Plugins will be loaded via JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Popular Plugins -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Popular Plugins</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-primary">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-video text-primary"></i> OBS WebRTC
+                                </h6>
+                                <p class="card-text small">WebRTC streaming support for OBS Studio</p>
+                                <button class="btn btn-sm btn-primary" onclick="installPopularPlugin('obs-webrtc')">
+                                    Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-success">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-microphone text-success"></i> Noise Suppression
+                                </h6>
+                                <p class="card-text small">AI-powered noise suppression for audio</p>
+                                <button class="btn btn-sm btn-success" onclick="installPopularPlugin('noise-suppression')">
+                                    Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-info">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-eye text-info"></i> Source Record
+                                </h6>
+                                <p class="card-text small">Record individual sources separately</p>
+                                <button class="btn btn-sm btn-info" onclick="installPopularPlugin('source-record')">
+                                    Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Install Plugin Modal -->
+<div class="modal fade" id="installPluginModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Install Plugin</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="installPluginForm">
+                    <div class="mb-3">
+                        <label for="pluginName" class="form-label">Plugin Name</label>
+                        <input type="text" class="form-control" id="pluginName" required>
+                        <div class="form-text">Enter the plugin name or GitHub repository URL</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pluginVersion" class="form-label">Version (Optional)</label>
+                        <input type="text" class="form-control" id="pluginVersion" placeholder="latest">
+                        <div class="form-text">Leave empty for latest version</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="installPlugin()">Install</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let plugins = {};
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        loadPlugins();
+    });
+    
+    async function loadPlugins() {
+        try {
+            const result = await apiCall('/api/plugins');
+            plugins = result;
+            updatePluginsGrid();
+        } catch (error) {
+            console.error('Error loading plugins:', error);
+            showToast('Failed to load plugins', 'danger');
+        }
+    }
+    
+    function updatePluginsGrid() {
+        const grid = document.getElementById('pluginsGrid');
+        grid.innerHTML = '';
+        
+        if (Object.keys(plugins).length === 0) {
+            grid.innerHTML = `
+                <div class="col-12">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-puzzle-piece fa-3x mb-3"></i>
+                        <h5>No plugins installed</h5>
+                        <p>Install your first plugin to enhance OBS functionality</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        Object.entries(plugins).forEach(([name, plugin]) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 col-lg-4 mb-3';
+            col.innerHTML = `
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="card-title">${name}</h6>
+                            <span class="badge bg-${plugin.status === 'active' ? 'success' : 'secondary'}">
+                                ${plugin.status || 'Unknown'}
+                            </span>
+                        </div>
+                        <p class="card-text small text-muted">${plugin.description || 'No description available'}</p>
+                        <div class="small mb-2">
+                            <strong>Version:</strong> ${plugin.version || 'Unknown'}<br>
+                            <strong>Author:</strong> ${plugin.author || 'Unknown'}
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent">
+                        <div class="btn-group w-100" role="group">
+                            <button class="btn btn-sm btn-outline-primary" onclick="updatePlugin('${name}')" title="Update">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="configurePlugin('${name}')" title="Configure">
+                                <i class="fas fa-cog"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="removePlugin('${name}')" title="Remove">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(col);
+        });
+    }
+    
+    async function refreshPlugins() {
+        await loadPlugins();
+        showToast('Plugins refreshed', 'success');
+    }
+    
+    function showInstallPlugin() {
+        const modal = new bootstrap.Modal(document.getElementById('installPluginModal'));
+        modal.show();
+    }
+    
+    async function installPlugin() {
+        const form = document.getElementById('installPluginForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const pluginName = document.getElementById('pluginName').value;
+        const version = document.getElementById('pluginVersion').value || 'latest';
+        
+        try {
+            const result = await apiCall('/api/plugins/install', {
+                method: 'POST',
+                body: JSON.stringify({ plugin_name: pluginName, version: version })
+            });
+            
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('installPluginModal')).hide();
+            form.reset();
+            await loadPlugins();
+        } catch (error) {
+            console.error('Error installing plugin:', error);
+        }
+    }
+    
+    async function installPopularPlugin(pluginName) {
+        try {
+            const result = await apiCall('/api/plugins/install', {
+                method: 'POST',
+                body: JSON.stringify({ plugin_name: pluginName })
+            });
+            
+            showToast(result.message, 'success');
+            await loadPlugins();
+        } catch (error) {
+            console.error('Error installing plugin:', error);
+        }
+    }
+    
+    async function updatePlugin(name) {
+        try {
+            const result = await apiCall(`/api/plugins/${name}/update`, { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadPlugins();
+        } catch (error) {
+            console.error('Error updating plugin:', error);
+        }
+    }
+    
+    async function removePlugin(name) {
+        if (!confirm(`Are you sure you want to remove the plugin "${name}"?`)) {
+            return;
+        }
+        
+        try {
+            const result = await apiCall(`/api/plugins/${name}/remove`, { method: 'DELETE' });
+            showToast(result.message, 'success');
+            await loadPlugins();
+        } catch (error) {
+            console.error('Error removing plugin:', error);
+        }
+    }
+    
+    function configurePlugin(name) {
+        showToast(`Plugin configuration for "${name}" would open here`, 'info');
+        // This would open a plugin-specific configuration interface
+    }
+</script>
+{% endblock %}

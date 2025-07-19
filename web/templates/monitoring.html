@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+
+{% block title %}Monitoring - OBS Docker Manager{% endblock %}
+{% block page_title %}Monitoring & Analytics{% endblock %}
+
+{% block content %}
+<!-- Real-time Metrics -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">System Load</div>
+                        <div class="h5 mb-0 font-weight-bold" id="system-load">0.0</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-tachometer-alt fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Network I/O</div>
+                        <div class="h5 mb-0 font-weight-bold" id="network-io">0 MB/s</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-network-wired fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Disk Usage</div>
+                        <div class="h5 mb-0 font-weight-bold" id="disk-usage">0%</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-hdd fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-uppercase mb-1">Uptime</div>
+                        <div class="h5 mb-0 font-weight-bold" id="uptime">0h 0m</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-clock fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <!-- System Performance Chart -->
+    <div class="col-xl-8 col-lg-7">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">System Performance Over Time</h6>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="setTimeRange('1h')">Last Hour</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="setTimeRange('6h')">Last 6 Hours</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="setTimeRange('24h')">Last 24 Hours</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="setTimeRange('7d')">Last 7 Days</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="chart-area">
+                    <canvas id="performanceChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Distribution -->
+    <div class="col-xl-4 col-lg-5">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Resource Distribution</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-pie pt-4 pb-2">
+                    <canvas id="resourceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Container Metrics -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Container Metrics</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="containerMetricsTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Container</th>
+                                <th>CPU %</th>
+                                <th>Memory</th>
+                                <th>Network I/O</th>
+                                <th>Block I/O</th>
+                                <th>PIDs</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="containerMetricsBody">
+                            <!-- Metrics will be populated via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts and Logs -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Recent Alerts</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshAlerts()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                <div id="alertsList">
+                    <!-- Alerts will be populated via JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">System Logs</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="refreshLogs()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearLogs()">
+                        <i class="fas fa-eraser"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                <pre id="systemLogs" style="font-size: 0.8rem; background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 0.375rem;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- External Monitoring Links -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">External Monitoring Tools</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-primary">
+                            <div class="card-body text-center">
+                                <i class="fas fa-chart-line fa-2x text-primary mb-2"></i>
+                                <h6>Grafana Dashboard</h6>
+                                <p class="small text-muted">Advanced metrics visualization</p>
+                                <a href="http://localhost:3000" target="_blank" class="btn btn-sm btn-primary">
+                                    Open Grafana
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-success">
+                            <div class="card-body text-center">
+                                <i class="fas fa-fire fa-2x text-success mb-2"></i>
+                                <h6>Prometheus</h6>
+                                <p class="small text-muted">Metrics collection and alerting</p>
+                                <a href="http://localhost:9090" target="_blank" class="btn btn-sm btn-success">
+                                    Open Prometheus
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-warning">
+                            <div class="card-body text-center">
+                                <i class="fas fa-bell fa-2x text-warning mb-2"></i>
+                                <h6>AlertManager</h6>
+                                <p class="small text-muted">Alert management and routing</p>
+                                <a href="http://localhost:9093" target="_blank" class="btn btn-sm btn-warning">
+                                    Open AlertManager
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let performanceChart;
+    let resourceChart;
+    let currentTimeRange = '1h';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCharts();
+        loadMetrics();
+        loadAlerts();
+        loadLogs();
+        
+        // Start real-time updates
+        setInterval(updateMetrics, 5000);
+    });
+    
+    function initializeCharts() {
+        // Performance Chart
+        const perfCtx = document.getElementById('performanceChart').getContext('2d');
+        performanceChart = new Chart(perfCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Memory Usage (%)',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Disk Usage (%)',
+                    data: [],
+                    borderColor: 'rgb(255, 205, 86)',
+                    backgroundColor: 'rgba(255, 205, 86, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+        
+        // Resource Chart
+        const resCtx = document.getElementById('resourceChart').getContext('2d');
+        resourceChart = new Chart(resCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Used CPU', 'Available CPU', 'Used Memory', 'Available Memory'],
+                datasets: [{
+                    data: [0, 100, 0, 100],
+                    backgroundColor: [
+                        '#ff6384',
+                        '#ffce56',
+                        '#36a2eb',
+                        '#4bc0c0'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+    
+    async function loadMetrics() {
+        try {
+            const result = await apiCall('/api/system/stats');
+            updateSystemMetrics(result);
+        } catch (error) {
+            console.error('Error loading metrics:', error);
+        }
+    }
+    
+    function updateSystemMetrics(stats) {
+        // Update metric cards
+        document.getElementById('system-load').textContent = (stats.cpu_percent || 0).toFixed(1);
+        document.getElementById('network-io').textContent = formatBytes((stats.network?.bytes_sent || 0) + (stats.network?.bytes_recv || 0)) + '/s';
+        document.getElementById('disk-usage').textContent = ((stats.disk?.used || 0) / (stats.disk?.total || 1) * 100).toFixed(1) + '%';
+        document.getElementById('uptime').textContent = formatUptime(Date.now() - (stats.boot_time || Date.now()));
+        
+        // Update performance chart
+        const now = new Date().toLocaleTimeString();
+        performanceChart.data.labels.push(now);
+        performanceChart.data.datasets[0].data.push(stats.cpu_percent || 0);
+        performanceChart.data.datasets[1].data.push(stats.memory?.percent || 0);
+        performanceChart.data.datasets[2].data.push((stats.disk?.used || 0) / (stats.disk?.total || 1) * 100);
+        
+        // Keep only last 50 data points
+        if (performanceChart.data.labels.length > 50) {
+            performanceChart.data.labels.shift();
+            performanceChart.data.datasets.forEach(dataset => dataset.data.shift());
+        }
+        
+        performanceChart.update('none');
+        
+        // Update resource chart
+        resourceChart.data.datasets[0].data = [
+            stats.cpu_percent || 0,
+            100 - (stats.cpu_percent || 0),
+            stats.memory?.percent || 0,
+            100 - (stats.memory?.percent || 0)
+        ];
+        resourceChart.update();
+    }
+    
+    async function updateMetrics() {
+        await loadMetrics();
+        updateContainerMetrics();
+    }
+    
+    function updateContainerMetrics() {
+        // This would fetch container-specific metrics
+        const tbody = document.getElementById('containerMetricsBody');
+        // Placeholder for container metrics
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center text-muted">
+                    <i class="fas fa-info-circle"></i> Container metrics will be displayed here
+                </td>
+            </tr>
+        `;
+    }
+    
+    async function loadAlerts() {
+        const alertsList = document.getElementById('alertsList');
+        
+        // Placeholder alerts
+        const alerts = [
+            { level: 'warning', message: 'High CPU usage detected', time: '2 minutes ago' },
+            { level: 'info', message: 'Container obs-streaming started', time: '5 minutes ago' },
+            { level: 'success', message: 'Backup completed successfully', time: '1 hour ago' }
+        ];
+        
+        alertsList.innerHTML = alerts.map(alert => `
+            <div class="alert alert-${alert.level === 'warning' ? 'warning' : alert.level === 'info' ? 'info' : 'success'} alert-dismissible fade show" role="alert">
+                <i class="fas fa-${alert.level === 'warning' ? 'exclamation-triangle' : alert.level === 'info' ? 'info-circle' : 'check-circle'}"></i>
+                ${alert.message}
+                <small class="d-block mt-1 text-muted">${alert.time}</small>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `).join('');
+    }
+    
+    async function loadLogs() {
+        const logsElement = document.getElementById('systemLogs');
+        
+        // Placeholder logs
+        const logs = [
+            '[2024-01-20 01:00:00] INFO: OBS Docker Manager started',
+            '[2024-01-20 01:00:05] INFO: Monitoring system initialized',
+            '[2024-01-20 01:00:10] INFO: Container obs-streaming health check passed',
+            '[2024-01-20 01:00:15] WARN: High memory usage detected (85%)',
+            '[2024-01-20 01:00:20] INFO: Backup process started',
+            '[2024-01-20 01:00:25] INFO: Plugin manager initialized'
+        ];
+        
+        logsElement.textContent = logs.join('\n');
+        logsElement.scrollTop = logsElement.scrollHeight;
+    }
+    
+    function refreshAlerts() {
+        loadAlerts();
+        showToast('Alerts refreshed', 'success');
+    }
+    
+    function refreshLogs() {
+        loadLogs();
+        showToast('Logs refreshed', 'success');
+    }
+    
+    function clearLogs() {
+        document.getElementById('systemLogs').textContent = '';
+        showToast('Logs cleared', 'info');
+    }
+    
+    function setTimeRange(range) {
+        currentTimeRange = range;
+        showToast(`Time range set to ${range}`, 'info');
+        // This would reload chart data for the specified time range
+    }
+    
+    function formatUptime(milliseconds) {
+        const seconds = Math.floor(milliseconds / 1000);
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return `${hours}h ${minutes}m`;
+    }
+    
+    // Update stats from WebSocket
+    function updateStats(data) {
+        if (data.system) {
+            updateSystemMetrics(data.system);
+        }
+    }
+</script>
+{% endblock %}

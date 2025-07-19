@@ -12,5 +12,16 @@ $(PROG): $(SRCS)
 $(PROG)-static: $(SRCS)
         $(CC) $(CFLAGS) -o $@ $^ -static $(LDFLAGS)
 
+test:
+	./tests/test-container.sh
+
 clean:
         rm -f $(PROG) $(PROG)-static
+
+# Build using Makefile (recommended)
+# make build
+# make build-multi  # for multi-architecture
+
+# Run tests
+# make test
+# ./tests/test-container.sh.sh

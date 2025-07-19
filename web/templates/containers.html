@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+
+{% block title %}Containers - OBS Docker Manager{% endblock %}
+{% block page_title %}Container Management{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">OBS Containers</h5>
+                <button class="btn btn-primary btn-custom" onclick="refreshContainers()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="containersTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>Image</th>
+                                <th>Created</th>
+                                <th>Ports</th>
+                                <th>CPU</th>
+                                <th>Memory</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="containersTableBody">
+                            {% for name, container in containers.items() %}
+                            <tr data-container="{{ container.name }}">
+                                <td>
+                                    <strong>{{ container.name }}</strong>
+                                    {% if container.labels %}
+                                        <br><small class="text-muted">{{ container.labels.get('description', '') }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{% if container.status == 'running' %}success{% elif container.status == 'exited' %}danger{% else %}warning{% endif %} status-badge">
+                                        <i class="fas fa-{% if container.status == 'running' %}play{% elif container.status == 'exited' %}stop{% else %}pause{% endif %}"></i>
+                                        {{ container.status|title }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <code>{{ container.image }}</code>
+                                </td>
+                                <td>
+                                    <span title="{{ container.created }}">
+                                        {{ container.created[:19] if container.created else 'Unknown' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if container.ports %}
+                                        {% for port, bindings in container.ports.items() %}
+                                            {% if bindings %}
+                                                {% for binding in bindings %}
+                                                    <span class="badge bg-info">{{ binding.HostPort }}:{{ port }}</span><br>
+                                                {% endfor %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        <span class="text-muted">No ports</span>
+                                    {% endif %}
+                                </td>
+                                <td class="cpu-usage">
+                                    {% if container.get('cpu_percent') %}
+                                        {{ "%.1f"|format(container.cpu_percent) }}%
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="memory-usage">
+                                    {% if container.get('memory_usage') and container.get('memory_limit') %}
+                                        {{ "%.1f"|format((container.memory_usage / container.memory_limit) * 100) }}%
+                                        <br><small class="text-muted">{{ (container.memory_usage / 1024 / 1024)|round(1) }}MB</small>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        {% if container.status == 'running' %}
+                                            <button class="btn btn-sm btn-warning" onclick="stopContainer('{{ container.name }}')" title="Stop">
+                                                <i class="fas fa-stop"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-info" onclick="restartContainer('{{ container.name }}')" title="Restart">
+                                                <i class="fas fa-redo"></i>
+                                            </button>
+                                        {% else %}
+                                            <button class="btn btn-sm btn-success" onclick="startContainer('{{ container.name }}')" title="Start">
+                                                <i class="fas fa-play"></i>
+                                            </button>
+                                        {% endif %}
+                                        <button class="btn btn-sm btn-secondary" onclick="viewLogs('{{ container.name }}')" title="View Logs">
+                                            <i class="fas fa-file-alt"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-primary" onclick="connectRDP('{{ container.name }}')" title="Connect RDP">
+                                            <i class="fas fa-desktop"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Container Statistics -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Container Resource Usage</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="resourceChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success btn-custom" onclick="startAllContainers()">
+                        <i class="fas fa-play-circle"></i> Start All Containers
+                    </button>
+                    <button class="btn btn-warning btn-custom" onclick="stopAllContainers()">
+                        <i class="fas fa-stop-circle"></i> Stop All Containers
+                    </button>
+                    <button class="btn btn-info btn-custom" onclick="restartAllContainers()">
+                        <i class="fas fa-redo-alt"></i> Restart All Containers
+                    </button>
+                    <hr>
+                    <button class="btn btn-primary btn-custom" onclick="showCreateContainer()">
+                        <i class="fas fa-plus"></i> Create New Container
+                    </button>
+                    <button class="btn btn-secondary btn-custom" onclick="cleanupContainers()">
+                        <i class="fas fa-broom"></i> Cleanup Stopped Containers
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Container Logs - <span id="logsContainerName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshLogs()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearLogsDisplay()">
+                            <i class="fas fa-eraser"></i> Clear Display
+                        </button>
+                    </div>
+                    <div>
+                        <label class="form-check-label me-2">Auto-refresh:</label>
+                        <input class="form-check-input" type="checkbox" id="autoRefreshLogs">
+                    </div>
+                </div>
+                <pre id="logsContent" style="max-height: 500px; overflow-y: auto; background-color: #1e1e1e; color: #ffffff; padding: 1rem; border-radius: 0.375rem; font-family: 'Courier New', monospace; font-size: 0.875rem;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Container Modal -->
+<div class="modal fade" id="createContainerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New Container</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createContainerForm">
+                    <div class="mb-3">
+                        <label for="containerName" class="form-label">Container Name</label>
+                        <input type="text" class="form-control" id="containerName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="containerUser" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="containerUser" value="developer" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="containerPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="containerPassword" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="containerTemplate" class="form-label">Template</label>
+                        <select class="form-select" id="containerTemplate">
+                            <option value="streaming">Streaming</option>
+                            <option value="recording">Recording</option>
+                            <option value="low-resource">Low Resource</option>
+                            <option value="gpu-accelerated">GPU Accelerated</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createContainer()">Create Container</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let resourceChart;
+    let logsRefreshInterval;
+    let currentLogsContainer = '';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeResourceChart();
+    });
+    
+    function initializeResourceChart() {
+        const ctx = document.getElementById('resourceChart').getContext('2d');
+        resourceChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }, {
+                    label: 'Memory Usage (%)',
+                    data: [],
+                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                }
+            }
+        });
+        
+        updateResourceChart();
+    }
+    
+    function updateResourceChart() {
+        const containers = {{ containers|tojson }};
+        const labels = [];
+        const cpuData = [];
+        const memoryData = [];
+        
+        Object.values(containers).forEach(container => {
+            if (container.status === 'running') {
+                labels.push(container.name);
+                cpuData.push(container.cpu_percent || 0);
+                
+                if (container.memory_usage && container.memory_limit) {
+                    memoryData.push((container.memory_usage / container.memory_limit) * 100);
+                } else {
+                    memoryData.push(0);
+                }
+            }
+        });
+        
+        resourceChart.data.labels = labels;
+        resourceChart.data.datasets[0].data = cpuData;
+        resourceChart.data.datasets[1].data = memoryData;
+        resourceChart.update();
+    }
+    
+    // Container management functions
+    async function refreshContainers() {
+        location.reload();
+    }
+    
+    async function startContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/start`, { method: 'POST' });
+            showToast(result.message, 'success');
+            updateContainerStatus(name, 'running');
+        } catch (error) {
+            console.error('Error starting container:', error);
+        }
+    }
+    
+    async function stopContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/stop`, { method: 'POST' });
+            showToast(result.message, 'success');
+            updateContainerStatus(name, 'exited');
+        } catch (error) {
+            console.error('Error stopping container:', error);
+        }
+    }
+    
+    async function restartContainer(name) {
+        try {
+            const result = await apiCall(`/api/container/${name}/restart`, { method: 'POST' });
+            showToast(result.message, 'success');
+            setTimeout(() => location.reload(), 2000);
+        } catch (error) {
+            console.error('Error restarting container:', error);
+        }
+    }
+    
+    async function viewLogs(name) {
+        try {
+            currentLogsContainer = name;
+            document.getElementById('logsContainerName').textContent = name;
+            
+            const result = await apiCall(`/api/container/${name}/logs`);
+            document.getElementById('logsContent').textContent = result.logs;
+            
+            const modal = new bootstrap.Modal(document.getElementById('logsModal'));
+            modal.show();
+            
+            // Setup auto-refresh if enabled
+            const autoRefresh = document.getElementById('autoRefreshLogs');
+            if (autoRefresh.checked) {
+                startLogsAutoRefresh();
+            }
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        }
+    }
+    
+    function connectRDP(name) {
+        // Get container port information
+        const containers = {{ containers|tojson }};
+        const container = containers[name];
+        
+        if (container && container.ports) {
+            let rdpPort = null;
+            for (const [port, bindings] of Object.entries(container.ports)) {
+                if (port.includes('3389') && bindings && bindings.length > 0) {
+                    rdpPort = bindings[0].HostPort;
+                    break;
+                }
+            }
+            
+            if (rdpPort) {
+                const rdpUrl = `rdp://localhost:${rdpPort}`;
+                showToast(`RDP connection available at localhost:${rdpPort}`, 'info');
+                
+                // Try to open RDP client (this may not work in all browsers)
+                try {
+                    window.open(rdpUrl);
+                } catch (e) {
+                    console.log('Could not auto-open RDP client');
+                }
+            } else {
+                showToast('No RDP port found for this container', 'warning');
+            }
+        }
+    }
+    
+    // Bulk operations
+    async function startAllContainers() {
+        const containers = {{ containers|tojson }};
+        const stoppedContainers = Object.values(containers).filter(c => c.status !== 'running');
+        
+        if (stoppedContainers.length === 0) {
+            showToast('All containers are already running', 'info');
+            return;
+        }
+        
+        for (const container of stoppedContainers) {
+            try {
+                await apiCall(`/api/container/${container.name}/start`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Error starting ${container.name}:`, error);
+            }
+        }
+        
+        showToast(`Started ${stoppedContainers.length} containers`, 'success');
+        setTimeout(() => location.reload(), 2000);
+    }
+    
+    async function stopAllContainers() {
+        const containers = {{ containers|tojson }};
+        const runningContainers = Object.values(containers).filter(c => c.status === 'running');
+        
+        if (runningContainers.length === 0) {
+            showToast('No running containers to stop', 'info');
+            return;
+        }
+        
+        for (const container of runningContainers) {
+            try {
+                await apiCall(`/api/container/${container.name}/stop`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Error stopping ${container.name}:`, error);
+            }
+        }
+        
+        showToast(`Stopped ${runningContainers.length} containers`, 'success');
+        setTimeout(() => location.reload(), 2000);
+    }
+    
+    async function restartAllContainers() {
+        const containers = {{ containers|tojson }};
+        const runningContainers = Object.values(containers).filter(c => c.status === 'running');
+        
+        if (runningContainers.length === 0) {
+            showToast('No running containers to restart', 'info');
+            return;
+        }
+        
+        for (const container of runningContainers) {
+            try {
+                await apiCall(`/api/container/${container.name}/restart`, { method: 'POST' });
+            } catch (error) {
+                console.error(`Error restarting ${container.name}:`, error);
+            }
+        }
+        
+        showToast(`Restarted ${runningContainers.length} containers`, 'success');
+        setTimeout(() => location.reload(), 3000);
+    }
+    
+    // Helper functions
+    function updateContainerStatus(name, status) {
+        const row = document.querySelector(`tr[data-container="${name}"]`);
+        if (row) {
+            const statusBadge = row.querySelector('.status-badge');
+            statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'} status-badge`;
+            statusBadge.innerHTML = `<i class="fas fa-${status === 'running' ? 'play' : 'stop'}"></i> ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+        }
+    }
+    
+    // Logs functions
+    function refreshLogs() {
+        if (currentLogsContainer) {
+            viewLogs(currentLogsContainer);
+        }
+    }
+    
+    function clearLogsDisplay() {
+        document.getElementById('logsContent').textContent = '';
+    }
+    
+    function startLogsAutoRefresh() {
+        if (logsRefreshInterval) {
+            clearInterval(logsRefreshInterval);
+        }
+        
+        logsRefreshInterval = setInterval(() => {
+            if (currentLogsContainer && document.getElementById('autoRefreshLogs').checked) {
+                refreshLogs();
+            }
+        }, 5000);
+    }
+    
+    // Event listeners
+    document.getElementById('autoRefreshLogs').addEventListener('change', function() {
+        if (this.checked) {
+            startLogsAutoRefresh();
+        } else {
+            if (logsRefreshInterval) {
+                clearInterval(logsRefreshInterval);
+            }
+        }
+    });
+    
+    // Modal event listeners
+    document.getElementById('logsModal').addEventListener('hidden.bs.modal', function() {
+        if (logsRefreshInterval) {
+            clearInterval(logsRefreshInterval);
+        }
+        currentLogsContainer = '';
+    });
+    
+    // Create container functions
+    function showCreateContainer() {
+        const modal = new bootstrap.Modal(document.getElementById('createContainerModal'));
+        modal.show();
+    }
+    
+    async function createContainer() {
+        const form = document.getElementById('createContainerForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            name: document.getElementById('containerName').value,
+            user: document.getElementById('containerUser').value,
+            password: document.getElementById('containerPassword').value,
+            template: document.getElementById('containerTemplate').value
+        };
+        
+        try {
+            const result = await apiCall('/api/instances/create', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('createContainerModal')).hide();
+            setTimeout(() => location.reload(), 2000);
+        } catch (error) {
+            console.error('Error creating container:', error);
+        }
+    }
+    
+    async function cleanupContainers() {
+        if (confirm('This will remove all stopped containers. Are you sure?')) {
+            showToast('Cleanup functionality would be implemented here', 'info');
+        }
+    }
+</script>
+{% endblock %}

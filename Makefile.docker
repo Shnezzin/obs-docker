@@ -1,0 +1,115 @@
+# OBS Studio Docker Container Makefile
+# Provides convenient commands for building and managing the container
+
+# Default values
+IMAGE_NAME ?= obs-studio-container
+CONTAINER_NAME ?= obs-studio
+OBS_VERSION ?= 31.1.1
+UBUNTU_VERSION ?= 24.04
+LOCALE ?= en_US.UTF-8
+TIMEZONE ?= UTC
+
+# Build the Docker image
+.PHONY: build
+build:
+	docker build \
+		--build-arg OBS_VERSION=$(OBS_VERSION) \
+		--build-arg UBUNTU_VERSION=$(UBUNTU_VERSION) \
+		--build-arg LOCALE=$(LOCALE) \
+		--build-arg TIMEZONE=$(TIMEZONE) \
+		-t $(IMAGE_NAME) .
+
+# Build for multiple architectures
+.PHONY: build-multi
+build-multi:
+	docker buildx build \
+		--platform linux/amd64,linux/arm64,linux/arm/v7 \
+		--build-arg OBS_VERSION=$(OBS_VERSION) \
+		--build-arg UBUNTU_VERSION=$(UBUNTU_VERSION) \
+		--build-arg LOCALE=$(LOCALE) \
+		--build-arg TIMEZONE=$(TIMEZONE) \
+		-t $(IMAGE_NAME) .
+
+# Run the container using docker-compose
+.PHONY: up
+up:
+	docker-compose up -d
+
+# Add test target to Docker Makefile
+.PHONY: test
+test:
+	chmod +x tests/test-container.sh
+	./tests/test-container.sh
+
+# Stop the container
+.PHONY: down
+down:
+	docker-compose down
+
+# View logs
+.PHONY: logs
+logs:
+	docker-compose logs -f
+
+# Run the container manually
+.PHONY: run
+run:
+	docker run -d \
+		--name $(CONTAINER_NAME) \
+		-p 3389:3389 \
+		-p 4455:4455 \
+		-v $(PWD)/home:/home:rw \
+		$(IMAGE_NAME)
+
+# Stop and remove the container
+.PHONY: stop
+stop:
+	docker stop $(CONTAINER_NAME) || true
+	docker rm $(CONTAINER_NAME) || true
+
+# Clean up images and containers
+.PHONY: clean
+clean: stop
+	docker rmi $(IMAGE_NAME) || true
+	docker system prune -f
+
+# Shell into running container
+.PHONY: shell
+shell:
+	docker exec -it $(CONTAINER_NAME) /bin/bash
+
+# Show container status
+.PHONY: status
+status:
+	docker ps -a --filter name=$(CONTAINER_NAME)
+
+# Health check
+.PHONY: health
+health:
+	docker exec $(CONTAINER_NAME) pgrep -f xrdp || echo "XRDP not running"
+	docker exec $(CONTAINER_NAME) pgrep -f supervisord || echo "Supervisor not running"
+
+# Show help
+.PHONY: help
+help:
+	@echo "Available commands:"
+	@echo "  build       - Build the Docker image"
+	@echo "  build-multi - Build for multiple architectures"
+	@echo "  up          - Start container with docker-compose"
+	@echo "  down        - Stop container with docker-compose"
+	@echo "  logs        - View container logs"
+	@echo "  run         - Run container manually"
+	@echo "  stop        - Stop and remove container"
+	@echo "  clean       - Clean up images and containers"
+	@echo "  shell       - Open shell in running container"
+	@echo "  status      - Show container status"
+	@echo "  health      - Check service health"
+	@echo "  help        - Show this help message"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  IMAGE_NAME=$(IMAGE_NAME)"
+	@echo "  CONTAINER_NAME=$(CONTAINER_NAME)"
+	@echo "  OBS_VERSION=$(OBS_VERSION)"
+	@echo "  UBUNTU_VERSION=$(UBUNTU_VERSION)"
+	@echo "  LOCALE=$(LOCALE)"
+	@echo "  TIMEZONE=$(TIMEZONE)"

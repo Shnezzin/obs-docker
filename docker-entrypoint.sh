@@ -1,43 +1,87 @@
 #!/bin/bash -e
 
+# Enhanced logging and error handling
+set -euo pipefail
+
+# Logging function
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2
+}
+
+log "Starting OBS Docker container initialization..."
+
 USER_ID=$(id -u)
 GROUP_ID=$(id -g)
 USER=${USER:-${DEFAULT_USER}}
 GROUP=${GROUP:-${USER}}
 PASSWD=${PASSWD:-${DEFAULT_PASSWD}}
 
+# Validate password strength (basic check)
+if [[ ${#PASSWD} -lt 8 ]]; then
+    log "WARNING: Password is less than 8 characters. Consider using a stronger password."
+fi
+
 unset DEFAULT_USER DEFAULT_PASSWD
 
 # Add group
-echo "GROUP_ID: $GROUP_ID"
-if [[ $GROUP_ID != "0" && ! $(getent group $GROUP) ]]; then
-    groupadd -g $GROUP_ID $GROUP
+log "Setting up group: $GROUP (GID: $GROUP_ID)"
+if [[ $GROUP_ID != "0" && ! $(getent group $GROUP 2>/dev/null) ]]; then
+    if ! groupadd -g $GROUP_ID $GROUP; then
+        log "ERROR: Failed to create group $GROUP"
+        exit 1
+    fi
+    log "Created group: $GROUP"
+else
+    log "Group $GROUP already exists or is root"
 fi
 
 # Add user
-echo "USER_ID: $USER_ID"
-if [[ $USER_ID != "0" && ! $(getent passwd $USER) ]]; then
+log "Setting up user: $USER (UID: $USER_ID)"
+if [[ $USER_ID != "0" && ! $(getent passwd $USER 2>/dev/null) ]]; then
     export HOME=/home/$USER
-    useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER
+    if ! useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER; then
+        log "ERROR: Failed to create user $USER"
+        exit 1
+    fi
+    log "Created user: $USER with home directory: $HOME"
+else
+    log "User $USER already exists or is root"
 fi
 
-# Revert permissions
-sudo chmod u-s /usr/sbin/useradd
-sudo chmod u-s /usr/sbin/groupadd
+# Revert permissions for security
+log "Reverting SUID permissions for security"
+if ! sudo chmod u-s /usr/sbin/useradd /usr/sbin/groupadd; then
+    log "WARNING: Failed to revert SUID permissions"
+fi
 
 if (( $# == 0 )); then
     # Set login user name
     USER=$(whoami)
-    echo "USER: $USER"
+    log "Configuring RDP access for user: $USER"
 
     # Set login password
-    echo "PASSWD: $PASSWD"
-    echo ${USER}:${PASSWD} | sudo chpasswd
+    log "Setting user password"
+    if ! echo "${USER}:${PASSWD}" | sudo chpasswd; then
+        log "ERROR: Failed to set password for user $USER"
+        exit 1
+    fi
 
+    # Setup user environment
+    log "Setting up user environment"
     [[ ! -e ${HOME}/.xsession ]] && \
         cp /etc/skel/.xsession ${HOME}/.xsession
+    
+    # Generate RDP keys if needed
+    log "Checking RDP keys"
     [[ ! -e /etc/xrdp/rsakeys.ini ]] && \
         sudo -u xrdp -g xrdp xrdp-keygen xrdp /etc/xrdp/rsakeys.ini > /dev/null 2>&1
+
+    # Health check: verify critical services can start
+    log "Performing pre-start health checks"
+    if ! pgrep -f dbus > /dev/null 2>&1; then
+        log "Starting D-Bus for health check"
+        sudo service dbus start || log "WARNING: D-Bus service check failed"
+    fi
 
     set -- /usr/bin/supervisord -c /etc/supervisor/xrdp.conf
     if [[ $USER_ID != "0" ]]; then
@@ -46,7 +90,13 @@ if (( $# == 0 )); then
         set -- /usr/local/bin/_alt-su root "$@"
     fi
 fi
+# Clear sensitive variables
 unset PASSWD
 
-echo "#############################"
+log "Starting services with command: $*"
+log "Container initialization completed successfully"
+log "RDP should be available on port 3389"
+log "#############################"
+
+# Execute the main command
 exec "$@"
