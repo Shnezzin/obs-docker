@@ -25,6 +25,7 @@ COPY app.py .
 COPY debug_docker.py .
 COPY test_docker_simple.py .
 COPY docker_client_fix.py .
+COPY docker_subprocess_client.py .
 COPY templates/ templates/
 
 # Create necessary directories
