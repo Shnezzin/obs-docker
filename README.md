@@ -152,8 +152,9 @@ python app.py                    # Start application
 ./start-web-manager.sh restart   # Restart web manager
 ./start-web-manager.sh status    # Check status
 ./start-web-manager.sh logs      # View logs
-./start-web-manager.sh setup     # Setup Python environment
+./start-web-manager.sh setup     # Setup Python environment + make scripts executable
 ./start-web-manager.sh local     # Run locally without Docker
+./start-web-manager.sh scripts   # Make all project scripts executable
 ./start-web-manager.sh help      # Show all commands
 ```
 

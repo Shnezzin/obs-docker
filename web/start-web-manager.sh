@@ -60,6 +60,56 @@ check_prerequisites() {
     success "Prerequisites check passed"
 }
 
+# Make all project scripts executable
+make_scripts_executable() {
+    log "Making project scripts executable..."
+    
+    # Get the project root directory (parent of web directory)
+    PROJECT_ROOT="$(cd .. && pwd)"
+    
+    # List of script directories and files to make executable
+    SCRIPT_PATHS=(
+        "$PROJECT_ROOT/docker-entrypoint.sh"
+        "$PROJECT_ROOT/scripts/backup-recovery.sh"
+        "$PROJECT_ROOT/scripts/cloud-integration.sh"
+        "$PROJECT_ROOT/scripts/desktop-manager.sh"
+        "$PROJECT_ROOT/scripts/health-check.sh"
+        "$PROJECT_ROOT/scripts/instance-manager.sh"
+        "$PROJECT_ROOT/scripts/performance-profiles.sh"
+        "$PROJECT_ROOT/scripts/plugin-manager.sh"
+        "$PROJECT_ROOT/scripts/security-manager.sh"
+        "$PROJECT_ROOT/tests/test-container.sh"
+        "$PROJECT_ROOT/web/start-web-manager.sh"
+    )
+    
+    # Make each script executable
+    local made_executable=0
+    for script_path in "${SCRIPT_PATHS[@]}"; do
+        if [ -f "$script_path" ]; then
+            if [ ! -x "$script_path" ]; then
+                chmod +x "$script_path"
+                log "  ✅ Made executable: $(basename "$script_path")"
+                ((made_executable++))
+            else
+                log "  ✓ Already executable: $(basename "$script_path")"
+            fi
+        else
+            warning "  ⚠️ Script not found: $script_path"
+        fi
+    done
+    
+    # Also make any additional .sh files in scripts directory executable
+    if [ -d "$PROJECT_ROOT/scripts" ]; then
+        find "$PROJECT_ROOT/scripts" -name "*.sh" -type f ! -executable -exec chmod +x {} \; -exec echo "  ✅ Made executable: {}" \;
+    fi
+    
+    if [ $made_executable -gt 0 ]; then
+        success "Made $made_executable scripts executable"
+    else
+        log "All scripts were already executable"
+    fi
+}
+
 # Setup local Python environment
 setup_local() {
     log "Setting up local Python environment..."
@@ -69,6 +119,10 @@ setup_local() {
         error "Python is not installed or not in PATH"
         exit 1
     fi
+    
+    # Make all project scripts executable
+    log "Making all project scripts executable..."
+    make_scripts_executable
     
     # Run local setup script
     if [ -f "setup-local.py" ]; then
@@ -183,14 +237,16 @@ show_help() {
     echo "  logs      Show logs (follow mode)"
     echo "  build     Build the web manager image"
     echo "  update    Update and restart the web manager"
-    echo "  setup     Setup local Python environment"
+    echo "  setup     Setup local Python environment + make scripts executable"
     echo "  local     Run web manager locally (without Docker)"
+    echo "  scripts   Make all project scripts executable"
     echo "  help      Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0 start    # Start with Docker"
-    echo "  $0 setup    # Setup local Python environment"
+    echo "  $0 setup    # Setup local Python environment + make scripts executable"
     echo "  $0 local    # Run locally without Docker"
+    echo "  $0 scripts  # Make all project scripts executable"
     echo "  $0 logs     # Follow the logs"
     echo "  $0 status   # Check if running"
     echo ""
@@ -255,6 +311,9 @@ main() {
             ;;
         local)
             run_local
+            ;;
+        scripts)
+            make_scripts_executable
             ;;
         help|--help|-h)
             show_help
