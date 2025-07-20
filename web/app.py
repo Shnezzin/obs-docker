@@ -1845,6 +1845,77 @@ def debug_rdp_connection(container_name):
         log_debug(f"Exception in debug_rdp_connection: {e}")
         return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
 
+@app.route('/api/container/<container_name>/fix-desktop', methods=['POST'])
+def fix_desktop_configuration(container_name):
+    """Fix desktop configuration for existing container"""
+    debug_logs = []
+    
+    def log_debug(message):
+        debug_logs.append(message)
+        print(f"[DEBUG] {message}")
+    
+    try:
+        log_debug(f"Fixing desktop configuration for container: {container_name}")
+        
+        if not docker_adapter:
+            return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
+        
+        # Find container by name or instance name
+        container = find_container_by_name_or_instance(container_name, debug_logs)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found', 'debug': debug_logs}), 404
+        
+        log_debug("Container found, fixing desktop configuration...")
+        
+        # Get actual container name
+        actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
+        log_debug(f"Actual container name: {actual_container_name}")
+        
+        # Fix .xsession for developer user
+        xsession_result = container.exec_run(
+            'echo "startlxde" > /home/developer/.xsession && chown developer:developer /home/developer/.xsession && chmod 644 /home/developer/.xsession',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Fixed .xsession: exit_code={xsession_result.exit_code}, output={xsession_result.output.decode()}")
+        
+        # Create LXDE autostart directory
+        mkdir_result = container.exec_run(
+            'mkdir -p /home/developer/.config/lxsession/LXDE/',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Created LXDE directory: exit_code={mkdir_result.exit_code}")
+        
+        # Configure LXDE autostart
+        autostart_result = container.exec_run(
+            'cat > /home/developer/.config/lxsession/LXDE/autostart << "EOF"\n@lxpanel --profile LXDE\n@pcmanfm --desktop --profile LXDE\n@xscreensaver -no-splash\nEOF',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Created autostart: exit_code={autostart_result.exit_code}")
+        
+        # Set proper permissions
+        chown_result = container.exec_run(
+            'chown -R developer:developer /home/developer/.config',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Set permissions: exit_code={chown_result.exit_code}")
+        
+        # Restart XRDP services
+        restart_result = container.exec_run(
+            'supervisorctl restart xrdp xrdp-sesman',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Restarted XRDP services: exit_code={restart_result.exit_code}, output={restart_result.output.decode()}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Desktop configuration fixed successfully',
+            'debug': debug_logs
+        })
+        
+    except Exception as e:
+        log_debug(f"Exception in fix_desktop_configuration: {e}")
+        return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
+
 @app.route('/api/container/<container_name>/create-user', methods=['POST'])
 def create_user_in_container(container_name):
     """Create user in existing container"""
