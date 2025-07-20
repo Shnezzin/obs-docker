@@ -467,10 +467,14 @@
         try {
             const response = await fetch('/api/containers');
             const result = await response.json();
+            console.log('[DEBUG] /api/containers result:', result);
             const containers = result.containers || {};
+            console.log('[DEBUG] Extracted containers:', containers);
+            console.log('[DEBUG] Container keys:', Object.keys(containers));
+            console.log('[DEBUG] Container count:', Object.keys(containers).length);
             updateContainersTable(containers);
         } catch (error) {
-            console.error('Error loading containers:', error);
+            console.error('[DEBUG] Error loading containers:', error);
         }
     }
 
@@ -487,11 +491,13 @@
         tbody.innerHTML = '';
         const host = window.location.hostname;
         const containerList = Object.values(containers);
+        console.log('[DEBUG] updateContainersTable: containerList:', containerList);
         if (containerList.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No containers found.</td></tr>`;
             return;
         }
         containerList.forEach(container => {
+            console.log('[DEBUG] Rendering container:', container);
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td><strong>${container.name}</strong></td>
