@@ -372,9 +372,10 @@ def api_instances():
                 print(f"Error processing container: {e}")
                 continue
         print(f"Returning {len(container_infos)} containers")
+        # Rückgabe als Dict statt Liste
         return jsonify({
             'status': 'success',
-            'instances': container_infos
+            'instances': {c['name']: c for c in container_infos}
         })
     except Exception as e:
         print(f"Error in list_instances: {str(e)}")
