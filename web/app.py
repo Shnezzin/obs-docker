@@ -354,10 +354,18 @@ def api_instances():
                 ports = {}
                 # Ports können als Dict oder String vorliegen
                 if isinstance(ports_info, dict):
+                    # docker inspect: {'3389/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '32784'}, ...]}
                     if '3389/tcp' in ports_info and ports_info['3389/tcp']:
-                        ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
+                        # Suche nach erstem HostPort, der gesetzt ist
+                        for binding in ports_info['3389/tcp']:
+                            if binding and binding.get('HostPort'):
+                                ports['rdp'] = binding['HostPort']
+                                break
                     if '5900/tcp' in ports_info and ports_info['5900/tcp']:
-                        ports['vnc'] = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
+                        for binding in ports_info['5900/tcp']:
+                            if binding and binding.get('HostPort'):
+                                ports['vnc'] = binding['HostPort']
+                                break
                 elif isinstance(ports_info, str):
                     # Beispiel: '0.0.0.0:32778->3389/tcp, :::32778->3389/tcp'
                     import re
