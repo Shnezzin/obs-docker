@@ -209,17 +209,17 @@ class DockerSubprocessClient:
         result = subprocess.run(['docker', 'inspect', name], 
                               capture_output=True, text=True, timeout=10)
         if result.returncode == 0:
-            return json.loads(result.stdout)[0]
-        else:
-            raise Exception(f"Container not found: {name}")
+            try:
+                return json.loads(result.stdout)[0]
+            except (json.JSONDecodeError, IndexError):
+                return {}
+        return {}
     
     def container_exists(self, name):
         """Check if container exists"""
-        try:
-            self.get_container_info(name)
-            return True
-        except Exception:
-            return False
+        result = subprocess.run(['docker', 'inspect', name], 
+                              capture_output=True, text=True, timeout=10)
+        return result.returncode == 0
 
 def test_subprocess_client():
     """Test the subprocess-based Docker client"""

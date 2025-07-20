@@ -112,18 +112,17 @@ except Exception as e:
     docker_client = None
 
 if not docker_client:
-    print("🔧 Python Docker client failed - trying subprocess fallback...")
+    print("🔧 Python Docker client failed - trying unified adapter...")
     try:
-        from docker_subprocess_client import DockerSubprocessClient
-        subprocess_client = DockerSubprocessClient()
-        if subprocess_client.available:
-            subprocess_client.ping()
-            print("✅ Subprocess Docker client working - using as fallback")
-            docker_client = subprocess_client
+        from docker_adapter import get_docker_client
+        adapter_client = get_docker_client()
+        if adapter_client and adapter_client.is_available():
+            print("✅ Docker adapter working - using unified interface")
+            docker_client = adapter_client
         else:
-            print("❌ Subprocess Docker client also failed")
+            print("❌ Docker adapter also failed")
     except Exception as e:
-        print(f"❌ Subprocess fallback failed: {e}")
+        print(f"❌ Docker adapter failed: {e}")
 
 if not docker_client:
     print("🔧 Running in standalone mode - Docker operations will return errors")
@@ -298,10 +297,9 @@ def api_instances():
         
         try:
             # Get all containers with obs-docker labels
-            containers = docker_client.containers.list(
-                all=True,
-                filters={'label': 'com.obs-docker.instance'}
-            )
+            containers = docker_client.list_containers(all=True)
+            # Filter containers with OBS Docker labels
+            containers = [c for c in containers if c.labels.get('com.obs-docker.instance')]
             
             instances = []
             for container in containers:
@@ -403,19 +401,18 @@ def create_instance():
             
             # Check if container already exists
             try:
-                existing_container = docker_client.containers.get(container_name)
+                existing_container = docker_client.get_container(container_name)
                 return jsonify({
                     'status': 'error', 
                     'message': f'Instance "{name}" already exists'
                 }), 409
-            except docker.errors.NotFound:
+            except Exception:
                 pass  # Container doesn't exist, we can create it
             
             # Create and start the container
-            container = docker_client.containers.run(
+            container = docker_client.create_container(
                 image='obs-docker:latest',  # Use the main OBS Docker image
                 name=container_name,
-                detach=True,
                 ports={
                     '3389/tcp': None,  # RDP port (auto-assign)
                     '5900/tcp': None,  # VNC port (auto-assign)
@@ -428,10 +425,9 @@ def create_instance():
                 },
                 volumes={
                     f'obs-config-{name}': {'bind': '/opt/obs-config', 'mode': 'rw'},
-                    f'obs-scenes-{name}': {'bind': '/home/{user}/.config/obs-studio', 'mode': 'rw'}
+                    f'obs-scenes-{name}': {'bind': f'/home/{user}/.config/obs-studio', 'mode': 'rw'}
                 },
                 network='obs-network',
-                restart_policy={'Name': 'unless-stopped'},
                 labels={
                     'com.obs-docker.instance': name,
                     'com.obs-docker.template': template,
