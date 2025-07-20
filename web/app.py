@@ -1785,6 +1785,66 @@ def handle_stats_request():
         'containers': obs_manager.containers
     })
 
+@app.route('/api/container/<container_name>/debug-rdp', methods=['POST'])
+def debug_rdp_connection(container_name):
+    """Debug RDP connection issues"""
+    debug_logs = []
+    
+    def log_debug(message):
+        debug_logs.append(message)
+        print(f"[DEBUG] {message}")
+    
+    try:
+        log_debug(f"Debugging RDP connection for container: {container_name}")
+        
+        if not docker_adapter:
+            return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
+        
+        # Find container by name or instance name
+        container = find_container_by_name_or_instance(container_name, debug_logs)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found', 'debug': debug_logs}), 404
+        
+        log_debug("Container found, checking RDP services...")
+        
+        # Check if XRDP is running
+        xrdp_result = container.exec_run('pgrep -f xrdp', user='root', debug_logs=debug_logs)
+        log_debug(f"XRDP process check: exit_code={xrdp_result.exit_code}, output={xrdp_result.output.decode()}")
+        
+        # Check if XRDP-SESMAN is running
+        sesman_result = container.exec_run('pgrep -f xrdp-sesman', user='root', debug_logs=debug_logs)
+        log_debug(f"XRDP-SESMAN process check: exit_code={sesman_result.exit_code}, output={sesman_result.output.decode()}")
+        
+        # Check RDP port
+        port_result = container.exec_run('netstat -ln | grep :3389', user='root', debug_logs=debug_logs)
+        log_debug(f"RDP port check: exit_code={port_result.exit_code}, output={port_result.output.decode()}")
+        
+        # Check user's .xsession
+        xsession_result = container.exec_run('cat /home/developer/.xsession', user='root', debug_logs=debug_logs)
+        log_debug(f"User .xsession check: exit_code={xsession_result.exit_code}, output={xsession_result.output.decode()}")
+        
+        # Check LXDE configuration
+        lxde_result = container.exec_run('ls -la /home/developer/.config/lxsession/LXDE/', user='root', debug_logs=debug_logs)
+        log_debug(f"LXDE config check: exit_code={lxde_result.exit_code}, output={lxde_result.output.decode()}")
+        
+        # Check XRDP logs
+        xrdp_log_result = container.exec_run('tail -20 /var/log/xrdp.log', user='root', debug_logs=debug_logs)
+        log_debug(f"XRDP logs: exit_code={xrdp_log_result.exit_code}, output={xrdp_log_result.output.decode()}")
+        
+        # Check XRDP-SESMAN logs
+        sesman_log_result = container.exec_run('tail -20 /var/log/xrdp-sesman.log', user='root', debug_logs=debug_logs)
+        log_debug(f"XRDP-SESMAN logs: exit_code={sesman_log_result.exit_code}, output={sesman_log_result.output.decode()}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'RDP debug information collected',
+            'debug': debug_logs
+        })
+        
+    except Exception as e:
+        log_debug(f"Exception in debug_rdp_connection: {e}")
+        return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
+
 @app.route('/api/container/<container_name>/create-user', methods=['POST'])
 def create_user_in_container(container_name):
     """Create user in existing container"""
