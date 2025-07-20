@@ -383,6 +383,14 @@ def api_instances():
             'message': f'Failed to list instances: {str(e)}'
         }), 500
 
+def debug_log(msg):
+    try:
+        with open('/tmp/obs_debug.log', 'a') as f:
+            f.write(msg + '\n')
+    except Exception as e:
+        pass
+    print(msg)
+
 @app.route('/api/instances/create', methods=['POST'])
 def create_instance():
     """Create a new OBS instance with real Docker container"""
@@ -419,11 +427,11 @@ def create_instance():
             try:
                 import docker.errors
                 try:
-                    print(f"[DEBUG] Suche Container: {container_name}")
+                    debug_log(f"[DEBUG] Suche Container: {container_name}")
                     existing_container = docker_client.get_container(container_name)
-                    print(f"[DEBUG] Ergebnis get_container: {existing_container} (Typ: {type(existing_container)})")
+                    debug_log(f"[DEBUG] Ergebnis get_container: {existing_container} (Typ: {type(existing_container)})")
                 except Exception as e:
-                    print(f"[DEBUG] Exception beim get_container: {e} (Typ: {type(e)})")
+                    debug_log(f"[DEBUG] Exception beim get_container: {e} (Typ: {type(e)})")
                     if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 404:
                         existing_container = None
                     elif 'No such container' in str(e) or '404' in str(e):
@@ -433,19 +441,19 @@ def create_instance():
                     elif isinstance(e, Exception) and e.__class__.__name__ == 'NotFound':
                         existing_container = None
                     else:
-                        print(f"Error checking for existing container {container_name}: {e}")
+                        debug_log(f"Error checking for existing container {container_name}: {e}")
                         return jsonify({
                             'status': 'error',
                             'message': f'Error checking for existing instance: {str(e)}'
                         }), 500
                 # Subprocess client: gibt None zurück, wenn nicht gefunden
                 if existing_container is None:
-                    print(f"[DEBUG] Container {container_name} existiert NICHT und kann erstellt werden.")
+                    debug_log(f"[DEBUG] Container {container_name} existiert NICHT und kann erstellt werden.")
                 else:
-                    print(f"[DEBUG] Container {container_name} existiert und Status wird geprüft.")
+                    debug_log(f"[DEBUG] Container {container_name} existiert und Status wird geprüft.")
                     if isinstance(existing_container, dict):  # Subprocess client
                         status = existing_container.get('State', {}).get('Status')
-                        print(f"[DEBUG] Subprocess-Client Status: {status}")
+                        debug_log(f"[DEBUG] Subprocess-Client Status: {status}")
                         if status not in ['removing', 'dead']:
                             return jsonify({
                                 'status': 'error', 
@@ -454,15 +462,15 @@ def create_instance():
                     else:  # Python Docker client
                         existing_container.reload()  # Refresh container state
                         status = existing_container.status
-                        print(f"[DEBUG] Python-Client Status: {status}")
+                        debug_log(f"[DEBUG] Python-Client Status: {status}")
                         if status not in ['removing', 'dead']:
                             return jsonify({
                                 'status': 'error', 
                                 'message': f'Instance "{name}" already exists and is {status}'
                             }), 409
-                    print(f"[DEBUG] Container {container_name} existiert, ist aber 'removing' oder 'dead', wird neu erstellt.")
+                    debug_log(f"[DEBUG] Container {container_name} existiert, ist aber 'removing' oder 'dead', wird neu erstellt.")
             except Exception as e:
-                print(f"[DEBUG] Fehler beim Überprüfen auf existierenden Container: {e} (Typ: {type(e)})")
+                debug_log(f"[DEBUG] Fehler beim Überprüfen auf existierenden Container: {e} (Typ: {type(e)})")
                 return jsonify({
                     'status': 'error',
                     'message': f'Error checking for existing instance: {str(e)}'
