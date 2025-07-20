@@ -156,17 +156,38 @@ class OBSManager:
                 
                 for container in containers:
                     if 'obs' in container.name.lower():
+                        # Get container status (handle both Python client and subprocess client)
+                        if hasattr(container, 'status'):
+                            status = container.status
+                            created = container.attrs['Created']
+                            state = container.attrs['State']
+                        else:
+                            # Handle subprocess client response (dictionary)
+                            status = container.get('State', {}).get('Status', 'unknown')
+                            created = container.get('Created', '')
+                            state = container.get('State', {})
+                        
+                        # Format uptime
+                        uptime = 'N/A'
+                        if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
+                            try:
+                                started_at = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00'))
+                                uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
+                            except (ValueError, TypeError):
+                                uptime = 'N/A'
+                        
                         stats = {
                             'name': container.name,
-                            'status': container.status,
+                            'status': status,
                             'image': container.image.tags[0] if container.image.tags else 'unknown',
-                            'created': container.attrs['Created'],
+                            'created': created,
+                            'uptime': uptime,
                             'ports': container.ports,
                             'labels': container.labels
                         }
                         
                         # Get container stats if running
-                        if container.status == 'running':
+                        if status == 'running':
                             try:
                                 container_stats = container.stats(stream=False)
                                 stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
