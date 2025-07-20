@@ -387,21 +387,20 @@
     async function loadSystemInfo() {
         try {
             const result = await apiCall('/api/system/info');
-            
-            document.getElementById('dockerVersion').textContent = result.docker_version || 'Unknown';
-            document.getElementById('hostOS').textContent = result.host_os || 'Unknown';
-            document.getElementById('architecture').textContent = result.architecture || 'Unknown';
-            document.getElementById('totalMemory').textContent = formatBytes(result.total_memory || 0);
-            document.getElementById('cpuCores').textContent = result.cpu_cores || 'Unknown';
+            console.log('[DEBUG] /api/system/info result:', result);
+            document.getElementById('dockerVersion').textContent = result.docker && result.docker.version ? result.docker.version : 'Unknown';
+            document.getElementById('hostOS').textContent = result.platform && result.platform.system ? result.platform.system : 'Unknown';
+            document.getElementById('architecture').textContent = result.platform && result.platform.architecture ? result.platform.architecture : 'Unknown';
+            document.getElementById('totalMemory').textContent = result.resources && result.resources.memory_total ? formatBytes(result.resources.memory_total) : 'Unknown';
+            document.getElementById('cpuCores').textContent = result.resources && result.resources.cpu_count ? result.resources.cpu_count : 'Unknown';
         } catch (error) {
             console.error('Error loading system info:', error);
-            
             // Set placeholder values
-            document.getElementById('dockerVersion').textContent = '24.0.0';
-            document.getElementById('hostOS').textContent = 'Linux';
-            document.getElementById('architecture').textContent = 'x86_64';
-            document.getElementById('totalMemory').textContent = '16 GB';
-            document.getElementById('cpuCores').textContent = '8';
+            document.getElementById('dockerVersion').textContent = 'Unknown';
+            document.getElementById('hostOS').textContent = 'Unknown';
+            document.getElementById('architecture').textContent = 'Unknown';
+            document.getElementById('totalMemory').textContent = 'Unknown';
+            document.getElementById('cpuCores').textContent = 'Unknown';
         }
     }
     
