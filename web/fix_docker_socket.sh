@@ -35,7 +35,9 @@ echo "✅ Created .env file with DOCKER_GID=$DOCKER_GID"
 # Rebuild and restart the web manager
 echo "🔄 Rebuilding web manager with correct Docker group..."
 docker-compose -f docker-compose.web.yml down
-docker-compose -f docker-compose.web.yml build --no-cache
+echo "📦 Building container with debug scripts..."
+docker-compose -f docker-compose.web.yml build --no-cache --pull
+echo "🚀 Starting web manager..."
 docker-compose -f docker-compose.web.yml up -d
 
 echo "⏳ Waiting for web manager to start..."

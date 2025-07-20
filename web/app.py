@@ -45,35 +45,53 @@ try:
     # Try different Docker client configurations
     docker_client = None
     
-    # Method 1: Default from_env
+    # Method 1: Explicit socket path (most reliable)
     try:
-        print("🔄 Trying docker.from_env()...")
-        client = docker.from_env()
+        print("🔄 Trying explicit unix socket...")
+        client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
         client.ping()
         docker_client = client
-        print("✅ Docker client connected via from_env()")
+        print("✅ Docker client connected via explicit socket")
     except Exception as e1:
-        print(f"❌ from_env() failed: {e1}")
+        print(f"❌ Explicit socket failed: {e1}")
         
-        # Method 2: Explicit socket path
+        # Method 2: Clear environment and try from_env
         try:
-            print("🔄 Trying explicit socket path...")
-            client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+            print("🔄 Trying docker.from_env() with cleared environment...")
+            # Clear potentially problematic environment variables
+            old_docker_host = os.environ.get('DOCKER_HOST')
+            if 'DOCKER_HOST' in os.environ:
+                del os.environ['DOCKER_HOST']
+            
+            client = docker.from_env()
             client.ping()
             docker_client = client
-            print("✅ Docker client connected via explicit socket")
-        except Exception as e2:
-            print(f"❌ Explicit socket failed: {e2}")
+            print("✅ Docker client connected via from_env()")
             
-            # Method 3: TCP connection (if available)
+            # Restore environment
+            if old_docker_host:
+                os.environ['DOCKER_HOST'] = old_docker_host
+                
+        except Exception as e2:
+            print(f"❌ from_env() failed: {e2}")
+            
+            # Restore environment
+            if old_docker_host:
+                os.environ['DOCKER_HOST'] = old_docker_host
+            
+            # Method 3: Force socket with custom environment
             try:
-                print("🔄 Trying TCP connection...")
-                client = docker.DockerClient(base_url='tcp://localhost:2375')
+                print("🔄 Trying with custom socket environment...")
+                import docker.client
+                client = docker.client.DockerClient(
+                    base_url='unix:///var/run/docker.sock',
+                    timeout=60
+                )
                 client.ping()
                 docker_client = client
-                print("✅ Docker client connected via TCP")
+                print("✅ Docker client connected via custom socket")
             except Exception as e3:
-                print(f"❌ TCP connection failed: {e3}")
+                print(f"❌ Custom socket failed: {e3}")
     
     if docker_client:
         version = docker_client.version()
