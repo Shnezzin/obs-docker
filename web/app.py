@@ -318,6 +318,7 @@ def api_instances():
         
         # Alle Container auflisten
         all_containers = docker_client.containers.list(all=True)
+        debug_log(f"[DEBUG] all_containers: {all_containers} (len={len(all_containers)})")
         print(f"Found {len(all_containers)} containers total")
         container_infos = []
         for idx, container in enumerate(all_containers):
