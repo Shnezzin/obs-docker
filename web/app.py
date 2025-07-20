@@ -114,7 +114,7 @@ except Exception as e:
 if not docker_client:
     print("🔧 Python Docker client failed - trying unified adapter...")
     try:
-        from docker_adapter import get_docker_client
+        from docker_adapter import get_docker_client, docker_adapter
         adapter_client = get_docker_client()
         if adapter_client and adapter_client.is_available():
             print("✅ Docker adapter working - using unified interface")
@@ -332,10 +332,10 @@ def restart_container(container_name):
 @app.route('/api/container/<container_name>/logs')
 def container_logs(container_name):
     """Get container logs"""
-    if not docker_client:
+    if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_client.containers.get(container_name)
+        container = docker_adapter.containers.get(container_name)
         logs = container.logs(tail=100).decode('utf-8')
         return jsonify({'logs': logs})
     except Exception as e:

@@ -4,6 +4,7 @@ Docker Client Adapter
 Provides unified interface for both Python Docker library and subprocess client
 """
 
+import subprocess
 import docker
 from docker_subprocess_client import DockerSubprocessClient
 
@@ -251,6 +252,28 @@ class SubprocessContainerWrapper:
         """Reload container info"""
         self._info = None
         return self._get_info()
+    
+    def logs(self, tail=None, since=None, timestamps=False, follow=False):
+        """Get container logs"""
+        cmd = ['docker', 'logs']
+        if tail:
+            cmd.extend(['--tail', str(tail)])
+        if since:
+            cmd.extend(['--since', since])
+        if timestamps:
+            cmd.append('--timestamps')
+        if follow:
+            cmd.append('--follow')
+        cmd.append(self._name)
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                return result.stdout.encode('utf-8')
+            else:
+                return f"Error getting logs: {result.stderr}".encode('utf-8')
+        except Exception as e:
+            return f"Error getting logs: {str(e)}".encode('utf-8')
 
 # Global adapter instance
 docker_adapter = DockerAdapter()
