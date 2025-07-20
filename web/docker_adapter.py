@@ -139,17 +139,16 @@ class DockerAdapter:
     
 class SubprocessContainerWrapper:
     """Wrapper to make subprocess container behave like Python Docker library container"""
-    
     def __init__(self, client, name):
         self.client = client
-        self.name = name
+        self._name = name
         self._info = None
-    
+
     @property
     def id(self):
         """Get container ID"""
         info = self._get_info()
-        return info.get('Id', self.name)[:12]
+        return info.get('Id', self._name)[:12]
     
     @property
     def status(self):
@@ -180,11 +179,11 @@ class SubprocessContainerWrapper:
         n = info.get('Names', '')
         if isinstance(n, list):
             return n[0]
-        elif isinstance(n, str):
+        elif isinstance(n, str) and n:
             return n
         elif 'Name' in info:
             return info['Name']
-        return ''
+        return self._name
     
     @property
     def exists(self):
@@ -195,26 +194,26 @@ class SubprocessContainerWrapper:
         """Get container info (cached)"""
         if not self._info:
             try:
-                self._info = self.client.get_container_info(self.name)
+                self._info = self.client.get_container_info(self._name)
             except Exception:
                 self._info = {}
         return self._info
     
     def start(self):
         """Start container"""
-        return self.client.start_container(self.name)
+        return self.client.start_container(self._name)
     
     def stop(self):
         """Stop container"""
-        return self.client.stop_container(self.name)
+        return self.client.stop_container(self._name)
     
     def restart(self):
         """Restart container"""
-        return self.client.restart_container(self.name)
+        return self.client.restart_container(self._name)
     
     def remove(self, v=False):
         """Remove container"""
-        return self.client.remove_container(self.name, volumes=v)
+        return self.client.remove_container(self._name, volumes=v)
     
     def reload(self):
         """Reload container info"""
