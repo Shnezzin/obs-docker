@@ -1899,6 +1899,13 @@ def fix_desktop_configuration(container_name):
         )
         log_debug(f"Set permissions: exit_code={chown_result.exit_code}")
         
+        # Fix XRDP configuration to use Xvnc instead of Xorg
+        xrdp_config_result = container.exec_run(
+            'sed -i "s/name=Xorg/name=Xvnc/g" /etc/xrdp/xrdp.ini && sed -i "s/lib=libxup.so/lib=libvnc.so/g" /etc/xrdp/xrdp.ini',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Fixed XRDP config: exit_code={xrdp_config_result.exit_code}")
+        
         # Restart XRDP services
         restart_result = container.exec_run(
             'supervisorctl restart xrdp xrdp-sesman',
