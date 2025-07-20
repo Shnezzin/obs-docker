@@ -85,7 +85,8 @@ COPY --from=build \
     /opt/su-exec/su-exec /usr/sbin/su-exec
 
 # Set timezone and locale dynamically
-RUN cp /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
+RUN rm -f /etc/localtime \
+    && ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime \
     && echo "${TIMEZONE}" > /etc/timezone
 RUN locale-gen ${LOCALE} \
     && echo "LC_ALL=${LOCALE}" > /etc/default/locale \
