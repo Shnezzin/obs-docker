@@ -33,8 +33,12 @@ services:
     # Grant access to Docker socket by matching host docker group GID
     group_add:
       - "${DOCKER_GID:-999}"
+    # Temporary fix for persistent http+docker error: run as root
+    user: "0:0"
     # Alternative: run with docker group privileges
     # user: "1000:${DOCKER_GID:-999}"
+    # Alternative: privileged mode (uncomment if needed)
+    # privileged: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/system/stats"]
       interval: 30s
