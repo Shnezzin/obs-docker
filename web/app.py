@@ -468,15 +468,21 @@ def parse_label_string(label_str):
 def ensure_user_exists(container_name, user, password):
     """Ensure the specified user exists in the container"""
     try:
+        print(f"[DEBUG] ensure_user_exists called for container {container_name}, user {user}")
         if not docker_adapter:
+            print("[DEBUG] docker_adapter not available")
             return False
         
         container = docker_adapter.containers.get(container_name)
         if not container:
+            print(f"[DEBUG] Container {container_name} not found")
             return False
+        
+        print(f"[DEBUG] Container {container_name} found, checking if user {user} exists")
         
         # Check if user exists
         result = container.exec_run(f'id {user}', user='root')
+        print(f"[DEBUG] User check result: exit_code={result.exit_code}, output={result.output.decode()}")
         if result.exit_code == 0:
             print(f"User {user} already exists in container {container_name}")
             return True
@@ -486,6 +492,7 @@ def ensure_user_exists(container_name, user, password):
         
         # Create group first
         group_result = container.exec_run(f'groupadd -g 1000 {user}', user='root')
+        print(f"[DEBUG] Group creation result: exit_code={group_result.exit_code}, output={group_result.output.decode()}")
         if group_result.exit_code != 0 and 'already exists' not in group_result.output.decode():
             print(f"Warning: Failed to create group {user}: {group_result.output.decode()}")
         
@@ -494,6 +501,7 @@ def ensure_user_exists(container_name, user, password):
             f'useradd -d /home/{user} -m -s /bin/bash -u 1000 -g 1000 {user}', 
             user='root'
         )
+        print(f"[DEBUG] User creation result: exit_code={user_result.exit_code}, output={user_result.output.decode()}")
         if user_result.exit_code != 0:
             print(f"Error creating user {user}: {user_result.output.decode()}")
             return False
@@ -503,6 +511,7 @@ def ensure_user_exists(container_name, user, password):
             f'echo "{user}:{password}" | chpasswd', 
             user='root'
         )
+        print(f"[DEBUG] Password setting result: exit_code={passwd_result.exit_code}, output={passwd_result.output.decode()}")
         if passwd_result.exit_code != 0:
             print(f"Error setting password for {user}: {passwd_result.output.decode()}")
             return False
@@ -719,6 +728,12 @@ def start_instance(instance_name):
         try:
             container = docker_adapter.containers.get(container_name)
             
+            if container is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Instance "{instance_name}" not found'
+                }), 404
+            
             if container.status == 'running':
                 return jsonify({
                     'status': 'success',
@@ -768,6 +783,12 @@ def stop_instance(instance_name):
         
         try:
             container = docker_adapter.containers.get(container_name)
+            
+            if container is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Instance "{instance_name}" not found'
+                }), 404
             
             if container.status == 'exited':
                 return jsonify({
@@ -819,6 +840,12 @@ def restart_instance(instance_name):
         try:
             container = docker_adapter.containers.get(container_name)
             
+            if container is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Instance "{instance_name}" not found'
+                }), 404
+            
             container.restart()
             if hasattr(container, 'reload'):
                 container.reload()
@@ -862,6 +889,12 @@ def remove_instance(instance_name):
         
         try:
             container = docker_adapter.containers.get(container_name)
+            
+            if container is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Instance "{instance_name}" not found'
+                }), 404
             
             # Stop container if running
             if container.status == 'running':
