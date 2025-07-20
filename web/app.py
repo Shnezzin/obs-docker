@@ -326,7 +326,11 @@ def api_instances():
                 debug_log(f"[DEBUG] Container raw object: {repr(container)}")
                 debug_log(f"[DEBUG] Container dir: {dir(container)}")
                 container_name = container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0]
-                container_labels = getattr(container, 'labels', {}) or {}
+                container_labels = getattr(container, 'labels', None)
+                if container_labels is None:
+                    container_labels = container.get('Labels', {})
+                if isinstance(container_labels, str):
+                    container_labels = parse_label_string(container_labels)
                 # Status und weitere Infos holen
                 if hasattr(container, 'status'):
                     status = container.status
@@ -398,6 +402,12 @@ def debug_log(msg):
     except Exception as e:
         pass
     print(msg)
+
+def parse_label_string(label_str):
+    if not label_str:
+        return {}
+    pairs = [kv.split('=', 1) for kv in label_str.split(',') if '=' in kv]
+    return {k.strip(): v.strip() for k, v in pairs}
 
 @app.route('/api/instances/create', methods=['POST'])
 def create_instance():
