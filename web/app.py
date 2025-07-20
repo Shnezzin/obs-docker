@@ -365,7 +365,11 @@ def api_instances():
                     'created': created,
                     'uptime': uptime,
                     'ports': ports,
-                    'labels': container_labels
+                    'labels': container_labels,
+                    # Zusätzliche Felder für das Frontend:
+                    'template': container_labels.get('com.obs-docker.template', ''),
+                    'user': container_labels.get('com.obs-docker.user', ''),
+                    'rdp_port': ports.get('rdp', ''),
                 }
                 container_infos.append(container_info)
             except Exception as e:
