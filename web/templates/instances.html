@@ -214,7 +214,7 @@
     async function loadInstances() {
         try {
             const result = await apiCall('/api/instances');
-            instances = result;
+            instances = result.instances || {};
             updateInstancesTable();
         } catch (error) {
             console.error('Error loading instances:', error);
