@@ -744,40 +744,53 @@ def get_container_name(instance_name):
 
 def find_container_by_name_or_instance(name_or_instance):
     """Find container by name or instance name"""
+    print(f"[DEBUG] find_container_by_name_or_instance called with: {name_or_instance}")
+    
     if not docker_adapter:
+        print("[DEBUG] docker_adapter not available")
         return None
     
     # Try direct container name first
     try:
+        print(f"[DEBUG] Trying direct container name: {name_or_instance}")
         container = docker_adapter.containers.get(name_or_instance)
         if container:
+            print(f"[DEBUG] Found container by direct name: {container}")
             return container
-    except:
-        pass
+    except Exception as e:
+        print(f"[DEBUG] Direct container name failed: {e}")
     
     # Try as instance name (add obs- prefix)
     container_name = get_container_name(name_or_instance)
     try:
+        print(f"[DEBUG] Trying as instance name: {container_name}")
         container = docker_adapter.containers.get(container_name)
         if container:
+            print(f"[DEBUG] Found container by instance name: {container}")
             return container
-    except:
-        pass
+    except Exception as e:
+        print(f"[DEBUG] Instance name failed: {e}")
     
     # Try to find by instance label
     try:
+        print(f"[DEBUG] Trying to find by instance label: {name_or_instance}")
         all_containers = docker_adapter.containers.list(all=True)
+        print(f"[DEBUG] Found {len(all_containers)} containers total")
+        
         for container in all_containers:
             if hasattr(container, 'labels'):
                 labels = container.labels
             else:
                 labels = container.get('Labels', {})
             
+            print(f"[DEBUG] Container labels: {labels}")
             if labels.get('com.obs-docker.instance') == name_or_instance:
+                print(f"[DEBUG] Found container by label: {container}")
                 return container
-    except:
-        pass
+    except Exception as e:
+        print(f"[DEBUG] Label search failed: {e}")
     
+    print(f"[DEBUG] Container not found: {name_or_instance}")
     return None
 
 @app.route('/api/instances/<instance_name>/start', methods=['POST'])
@@ -1743,30 +1756,44 @@ def handle_stats_request():
 def create_user_in_container(container_name):
     """Create user in existing container"""
     try:
+        print(f"[DEBUG] create_user_in_container called with container_name: {container_name}")
         data = request.json or {}
         user = data.get('user', 'developer')
         password = data.get('password', 'obs123')
         
+        print(f"[DEBUG] User: {user}, Password: {password}")
+        
         if not docker_adapter:
+            print("[DEBUG] docker_adapter not available")
             return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+        
+        print(f"[DEBUG] docker_adapter available, searching for container: {container_name}")
         
         # Find container by name or instance name
         container = find_container_by_name_or_instance(container_name)
         if container is None:
+            print(f"[DEBUG] Container {container_name} not found")
             return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
+        
+        print(f"[DEBUG] Container found: {container}")
         
         # Get actual container name for user creation
         actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
+        print(f"[DEBUG] Actual container name: {actual_container_name}")
         
+        print(f"[DEBUG] Calling ensure_user_exists with: {actual_container_name}, {user}, {password}")
         if ensure_user_exists(actual_container_name, user, password):
+            print(f"[DEBUG] User creation successful")
             return jsonify({
                 'status': 'success', 
                 'message': f'User {user} created successfully in container {container_name}'
             })
         else:
+            print(f"[DEBUG] User creation failed")
             return jsonify({'status': 'error', 'message': f'Failed to create user {user} in container {container_name}'}), 500
             
     except Exception as e:
+        print(f"[DEBUG] Exception in create_user_in_container: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
