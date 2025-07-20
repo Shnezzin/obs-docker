@@ -419,9 +419,11 @@ def create_instance():
             try:
                 import docker.errors
                 try:
+                    print(f"[DEBUG] Suche Container: {container_name}")
                     existing_container = docker_client.get_container(container_name)
+                    print(f"[DEBUG] Ergebnis get_container: {existing_container} (Typ: {type(existing_container)})")
                 except Exception as e:
-                    # Python Docker client: NotFound Exception
+                    print(f"[DEBUG] Exception beim get_container: {e} (Typ: {type(e)})")
                     if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 404:
                         existing_container = None
                     elif 'No such container' in str(e) or '404' in str(e):
@@ -438,25 +440,29 @@ def create_instance():
                         }), 500
                 # Subprocess client: gibt None zurück, wenn nicht gefunden
                 if existing_container is None:
-                    print(f"Container {container_name} does not exist, will create new one")
+                    print(f"[DEBUG] Container {container_name} existiert NICHT und kann erstellt werden.")
                 else:
-                    # Container existiert -> Status prüfen
+                    print(f"[DEBUG] Container {container_name} existiert und Status wird geprüft.")
                     if isinstance(existing_container, dict):  # Subprocess client
-                        if existing_container.get('State', {}).get('Status') not in ['removing', 'dead']:
+                        status = existing_container.get('State', {}).get('Status')
+                        print(f"[DEBUG] Subprocess-Client Status: {status}")
+                        if status not in ['removing', 'dead']:
                             return jsonify({
                                 'status': 'error', 
-                                'message': f'Instance "{name}" already exists and is {existing_container.get("State", {}).get("Status", "unknown")}'
+                                'message': f'Instance "{name}" already exists and is {status}'
                             }), 409
                     else:  # Python Docker client
                         existing_container.reload()  # Refresh container state
-                        if existing_container.status not in ['removing', 'dead']:
+                        status = existing_container.status
+                        print(f"[DEBUG] Python-Client Status: {status}")
+                        if status not in ['removing', 'dead']:
                             return jsonify({
                                 'status': 'error', 
-                                'message': f'Instance "{name}" already exists and is {existing_container.status}'
+                                'message': f'Instance "{name}" already exists and is {status}'
                             }), 409
-                    print(f"Container {container_name} exists but is being removed or dead, will recreate")
+                    print(f"[DEBUG] Container {container_name} existiert, ist aber 'removing' oder 'dead', wird neu erstellt.")
             except Exception as e:
-                print(f"Error checking for existing container {container_name}: {e}")
+                print(f"[DEBUG] Fehler beim Überprüfen auf existierenden Container: {e} (Typ: {type(e)})")
                 return jsonify({
                     'status': 'error',
                     'message': f'Error checking for existing instance: {str(e)}'
