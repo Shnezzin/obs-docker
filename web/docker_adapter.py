@@ -377,21 +377,31 @@ class SubprocessContainerWrapper:
         
         return 0
     
-    def exec_run(self, cmd, user=None):
+    def exec_run(self, cmd, user=None, debug_logs=None):
         """Execute command in container"""
+        def log_debug(message):
+            if debug_logs is not None:
+                debug_logs.append(f"exec_run: {message}")
+            print(f"[DEBUG] exec_run: {message}")
+        
         docker_cmd = ['docker', 'exec']
         if user:
             docker_cmd.extend(['-u', user])
         docker_cmd.extend([self._name, 'sh', '-c', cmd])
         
+        log_debug(f"command: {docker_cmd}")
+        
         try:
             result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=30)
+            log_debug(f"result: exit_code={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'")
+            
             return type('ExecResult', (), {
                 'exit_code': result.returncode,
                 'output': result.stdout.encode('utf-8') if result.stdout else b'',
                 'stderr': result.stderr.encode('utf-8') if result.stderr else b''
             })()
         except Exception as e:
+            log_debug(f"exception: {e}")
             return type('ExecResult', (), {
                 'exit_code': 1,
                 'output': b'',

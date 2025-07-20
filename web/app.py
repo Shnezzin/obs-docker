@@ -515,8 +515,8 @@ def ensure_user_exists(container_name, user, password, debug_logs=None):
         log_debug(f"Container {container_name} found and running, checking if user {user} exists")
         
         # Check if user exists
-        result = container.exec_run(f'id {user}', user='root')
-        log_debug(f"User check result: exit_code={result.exit_code}, output={result.output.decode()}")
+        result = container.exec_run(f'id {user}', user='root', debug_logs=debug_logs)
+        log_debug(f"User check result: exit_code={result.exit_code}, output={result.output.decode()}, stderr={result.stderr.decode()}")
         if result.exit_code == 0:
             log_debug(f"User {user} already exists in container {container_name}")
             return True
@@ -524,28 +524,51 @@ def ensure_user_exists(container_name, user, password, debug_logs=None):
         # Create user if it doesn't exist
         log_debug(f"Creating user {user} in container {container_name}")
         
-        # Create group first
-        group_result = container.exec_run(f'groupadd -g 1000 {user}', user='root')
-        log_debug(f"Group creation result: exit_code={group_result.exit_code}, output={group_result.output.decode()}")
-        if group_result.exit_code != 0 and 'already exists' not in group_result.output.decode():
-            log_debug(f"Warning: Failed to create group {user}: {group_result.output.decode()}")
+        # Try to create group first (ignore if already exists)
+        group_result = container.exec_run(f'groupadd -g 1000 {user}', user='root', debug_logs=debug_logs)
+        log_debug(f"Group creation result: exit_code={group_result.exit_code}, output={group_result.output.decode()}, stderr={group_result.stderr.decode()}")
+        # Don't fail if group already exists
         
-        # Create user
+        # Try different user creation methods
+        user_created = False
+        
+        # Method 1: Standard useradd
         user_result = container.exec_run(
             f'useradd -d /home/{user} -m -s /bin/bash -u 1000 -g 1000 {user}', 
-            user='root'
+            user='root', debug_logs=debug_logs
         )
-        log_debug(f"User creation result: exit_code={user_result.exit_code}, output={user_result.output.decode()}")
-        if user_result.exit_code != 0:
-            log_debug(f"Error creating user {user}: {user_result.output.decode()}")
+        log_debug(f"User creation (method 1) result: exit_code={user_result.exit_code}, output={user_result.output.decode()}, stderr={user_result.stderr.decode()}")
+        if user_result.exit_code == 0:
+            user_created = True
+        else:
+            # Method 2: Try without specifying UID/GID
+            user_result2 = container.exec_run(
+                f'useradd -d /home/{user} -m -s /bin/bash {user}', 
+                user='root', debug_logs=debug_logs
+            )
+            log_debug(f"User creation (method 2) result: exit_code={user_result2.exit_code}, output={user_result2.output.decode()}, stderr={user_result2.stderr.decode()}")
+            if user_result2.exit_code == 0:
+                user_created = True
+            else:
+                # Method 3: Try adduser (Ubuntu/Debian style)
+                user_result3 = container.exec_run(
+                    f'adduser --disabled-password --gecos "" {user}', 
+                    user='root', debug_logs=debug_logs
+                )
+                log_debug(f"User creation (method 3) result: exit_code={user_result3.exit_code}, output={user_result3.output.decode()}, stderr={user_result3.stderr.decode()}")
+                if user_result3.exit_code == 0:
+                    user_created = True
+        
+        if not user_created:
+            log_debug(f"Error creating user {user}: All methods failed")
             return False
         
         # Set password
         passwd_result = container.exec_run(
             f'echo "{user}:{password}" | chpasswd', 
-            user='root'
+            user='root', debug_logs=debug_logs
         )
-        log_debug(f"Password setting result: exit_code={passwd_result.exit_code}, output={passwd_result.output.decode()}")
+        log_debug(f"Password setting result: exit_code={passwd_result.exit_code}, output={passwd_result.output.decode()}, stderr={passwd_result.stderr.decode()}")
         if passwd_result.exit_code != 0:
             log_debug(f"Error setting password for {user}: {passwd_result.output.decode()}")
             return False
