@@ -142,6 +142,26 @@ class DockerAdapter:
                 
         return ContainersNamespace(self)
     
+    @property
+    def volumes(self):
+        if not self.client:
+            raise Exception("No Docker client available")
+        if self.client_type == 'python':
+            return self.client.volumes
+        else:
+            # Dummy-Objekt für Subprocess-Client
+            class VolumesNamespace:
+                def __init__(self, client):
+                    self.client = client
+                def get(self, name):
+                    class Volume:
+                        def remove(self_inner):
+                            # Versuche das Volume zu entfernen
+                            import subprocess
+                            subprocess.run(['docker', 'volume', 'rm', name], capture_output=True)
+                    return Volume()
+            return VolumesNamespace(self.client)
+
 class SubprocessContainerWrapper:
     """Wrapper to make subprocess container behave like Python Docker library container"""
     def __init__(self, client, name):
