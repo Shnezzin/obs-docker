@@ -29,80 +29,7 @@
                             </tr>
                         </thead>
                         <tbody id="containersTableBody">
-                            {% for name, container in containers.items() %}
-                            <tr data-container="{{ container.name }}">
-                                <td>
-                                    <strong>{{ container.name }}</strong>
-                                    {% if container.labels %}
-                                        <br><small class="text-muted">{{ container.labels.get('description', '') }}</small>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <span class="badge bg-{% if container.status == 'running' %}success{% elif container.status == 'exited' %}danger{% else %}warning{% endif %} status-badge">
-                                        <i class="fas fa-{% if container.status == 'running' %}play{% elif container.status == 'exited' %}stop{% else %}pause{% endif %}"></i>
-                                        {{ container.status|title }}
-                                    </span>
-                                </td>
-                                <td>
-                                    <code>{{ container.image }}</code>
-                                </td>
-                                <td>
-                                    <span title="{{ container.created }}">
-                                        {{ container.created[:19] if container.created else 'Unknown' }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {% if container.ports %}
-                                        {% for port, bindings in container.ports.items() %}
-                                            {% if bindings %}
-                                                {% for binding in bindings %}
-                                                    <span class="badge bg-info">{{ binding.HostPort }}:{{ port }}</span><br>
-                                                {% endfor %}
-                                            {% endif %}
-                                        {% endfor %}
-                                    {% else %}
-                                        <span class="text-muted">No ports</span>
-                                    {% endif %}
-                                </td>
-                                <td class="cpu-usage">
-                                    {% if container.get('cpu_percent') %}
-                                        {{ "%.1f"|format(container.cpu_percent) }}%
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                                <td class="memory-usage">
-                                    {% if container.get('memory_usage') and container.get('memory_limit') %}
-                                        {{ "%.1f"|format((container.memory_usage / container.memory_limit) * 100) }}%
-                                        <br><small class="text-muted">{{ (container.memory_usage / 1024 / 1024)|round(1) }}MB</small>
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        {% if container.status == 'running' %}
-                                            <button class="btn btn-sm btn-warning" onclick="stopContainer('{{ container.name }}')" title="Stop">
-                                                <i class="fas fa-stop"></i>
-                                            </button>
-                                            <button class="btn btn-sm btn-info" onclick="restartContainer('{{ container.name }}')" title="Restart">
-                                                <i class="fas fa-redo"></i>
-                                            </button>
-                                        {% else %}
-                                            <button class="btn btn-sm btn-success" onclick="startContainer('{{ container.name }}')" title="Start">
-                                                <i class="fas fa-play"></i>
-                                            </button>
-                                        {% endif %}
-                                        <button class="btn btn-sm btn-secondary" onclick="viewLogs('{{ container.name }}')" title="View Logs">
-                                            <i class="fas fa-file-alt"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-primary" onclick="connectRDP('{{ container.name }}')" title="Connect RDP">
-                                            <i class="fas fa-desktop"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
+                            <!-- Wird per JavaScript befüllt -->
                         </tbody>
                     </table>
                 </div>
@@ -234,6 +161,7 @@
     
     document.addEventListener('DOMContentLoaded', function() {
         initializeResourceChart();
+        loadContainers(); // Initial load
     });
     
     function initializeResourceChart() {
@@ -298,7 +226,7 @@
     
     // Container management functions
     async function refreshContainers() {
-        location.reload();
+        loadContainers();
     }
     
     async function startContainer(name) {
@@ -532,6 +460,92 @@
     async function cleanupContainers() {
         if (confirm('This will remove all stopped containers. Are you sure?')) {
             showToast('Cleanup functionality would be implemented here', 'info');
+        }
+    }
+
+    async function loadContainers() {
+        try {
+            const response = await fetch('/api/containers');
+            const containers = await response.json();
+            updateContainersTable(containers);
+        } catch (error) {
+            console.error('Fehler beim Laden der Container:', error);
+        }
+    }
+
+    function formatDateTime(dateString) {
+        if (!dateString) return 'Unknown';
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return dateString;
+        const pad = n => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function updateContainersTable(containers) {
+        const tbody = document.getElementById('containersTableBody');
+        tbody.innerHTML = '';
+        const host = window.location.hostname;
+        const containerList = Object.values(containers);
+        if (containerList.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">Keine Container gefunden.</td></tr>`;
+            return;
+        }
+        containerList.forEach(container => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${container.name}</strong></td>
+                <td><span class="badge bg-${getStatusColor(container.status)}"><i class="fas fa-${getStatusIcon(container.status)}"></i> ${container.status}</span></td>
+                <td><code>${container.image}</code></td>
+                <td><span title="${container.created}">${formatDateTime(container.created)}</span></td>
+                <td>${formatPorts(container.ports)}</td>
+                <td class="cpu-usage">${container.cpu_percent !== undefined ? `${container.cpu_percent.toFixed(1)}%` : '<span class="text-muted">-</span>'}</td>
+                <td class="memory-usage">${container.memory_usage && container.memory_limit ? `${((container.memory_usage / container.memory_limit) * 100).toFixed(1)}%<br><small class='text-muted'>${(container.memory_usage / 1024 / 1024).toFixed(1)}MB</small>` : '<span class="text-muted">-</span>'}</td>
+                <td>
+                    <div class="btn-group" role="group">
+                        ${container.status === 'running' ? `
+                            <button class="btn btn-sm btn-warning" onclick="stopContainer('${container.name}')" title="Stop"><i class="fas fa-stop"></i></button>
+                            <button class="btn btn-sm btn-info" onclick="restartContainer('${container.name}')" title="Restart"><i class="fas fa-redo"></i></button>
+                        ` : `
+                            <button class="btn btn-sm btn-success" onclick="startContainer('${container.name}')" title="Start"><i class="fas fa-play"></i></button>
+                        `}
+                        <button class="btn btn-sm btn-secondary" onclick="viewLogs('${container.name}')" title="View Logs"><i class="fas fa-file-alt"></i></button>
+                        <button class="btn btn-sm btn-primary" onclick="connectRDP('${container.name}')" title="Connect RDP"><i class="fas fa-desktop"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function formatPorts(ports) {
+        if (!ports || Object.keys(ports).length === 0) return '<span class="text-muted">No ports</span>';
+        let html = '';
+        for (const [port, bindings] of Object.entries(ports)) {
+            if (bindings) {
+                bindings.forEach(binding => {
+                    if (binding && binding.HostPort) {
+                        html += `<span class="badge bg-info">${binding.HostPort}:${port}</span><br>`;
+                    }
+                });
+            }
+        }
+        return html || '<span class="text-muted">No ports</span>';
+    }
+
+    function getStatusColor(status) {
+        switch (status) {
+            case 'running': return 'success';
+            case 'exited': return 'danger';
+            case 'paused': return 'warning';
+            default: return 'secondary';
+        }
+    }
+    function getStatusIcon(status) {
+        switch (status) {
+            case 'running': return 'play';
+            case 'exited': return 'stop';
+            case 'paused': return 'pause';
+            default: return 'question';
         }
     }
 </script>

@@ -155,52 +155,45 @@ class OBSManager:
                 self.containers = {}
                 
                 for container in containers:
-                    if 'obs' in container.name.lower():
-                        # Get container status (handle both Python client and subprocess client)
-                        if hasattr(container, 'status'):
-                            status = container.status
-                            created = container.attrs['Created']
-                            state = container.attrs['State']
-                        else:
-                            # Handle subprocess client response (dictionary)
-                            status = container.get('State', {}).get('Status', 'unknown')
-                            created = container.get('Created', '')
-                            state = container.get('State', {})
-                        
-                        # Format uptime
-                        uptime = 'N/A'
-                        if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
-                            try:
-                                started_at = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00'))
-                                uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
-                            except (ValueError, TypeError):
-                                uptime = 'N/A'
-                        
-                        stats = {
-                            'name': container.name,
-                            'status': status,
-                            'image': container.image.tags[0] if container.image.tags else 'unknown',
-                            'created': created,
-                            'uptime': uptime,
-                            'ports': container.ports,
-                            'labels': container.labels
-                        }
-                        
-                        # Get container stats if running
-                        if status == 'running':
-                            try:
-                                container_stats = container.stats(stream=False)
-                                stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
-                                stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
-                                stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
-                            except:
-                                pass
-                        
-                        self.containers[container.name] = stats
+                    # Entferne die Filterung auf 'obs' im Namen, zeige ALLE Container
+                    if hasattr(container, 'status'):
+                        status = container.status
+                        created = container.attrs['Created']
+                        state = container.attrs['State']
+                    else:
+                        status = container.get('State', {}).get('Status', 'unknown')
+                        created = container.get('Created', '')
+                        state = container.get('State', {})
+                    # Format uptime
+                    uptime = 'N/A'
+                    if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
+                        try:
+                            started_at = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00'))
+                            uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
+                        except (ValueError, TypeError):
+                            uptime = 'N/A'
+                    stats = {
+                        'name': container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0],
+                        'status': status,
+                        'image': container.image.tags[0] if hasattr(container, 'image') and container.image and hasattr(container.image, 'tags') and container.image.tags else (container.get('Image', 'unknown') if not hasattr(container, 'image') else 'unknown'),
+                        'created': created,
+                        'uptime': uptime,
+                        'ports': container.ports if hasattr(container, 'ports') else container.get('Ports', {}),
+                        'labels': container.labels if hasattr(container, 'labels') else container.get('Labels', {}),
+                    }
+                    # Get container stats if running
+                    if status == 'running':
+                        try:
+                            container_stats = container.stats(stream=False)
+                            stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
+                            stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
+                            stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
+                        except:
+                            pass
+                    self.containers[stats['name']] = stats
             else:
                 # Standalone mode - no container stats
                 self.containers = {}
-                    
         except Exception as e:
             print(f"Error updating stats: {e}")
     
