@@ -463,6 +463,55 @@ def parse_label_string(label_str):
     pairs = [kv.split('=', 1) for kv in label_str.split(',') if '=' in kv]
     return {k.strip(): v.strip() for k, v in pairs}
 
+def ensure_user_exists(container_name, user, password):
+    """Ensure the specified user exists in the container"""
+    try:
+        if not docker_adapter:
+            return False
+        
+        container = docker_adapter.containers.get(container_name)
+        if not container:
+            return False
+        
+        # Check if user exists
+        result = container.exec_run(f'id {user}', user='root')
+        if result.exit_code == 0:
+            print(f"User {user} already exists in container {container_name}")
+            return True
+        
+        # Create user if it doesn't exist
+        print(f"Creating user {user} in container {container_name}")
+        
+        # Create group first
+        group_result = container.exec_run(f'groupadd -g 1000 {user}', user='root')
+        if group_result.exit_code != 0 and 'already exists' not in group_result.output.decode():
+            print(f"Warning: Failed to create group {user}: {group_result.output.decode()}")
+        
+        # Create user
+        user_result = container.exec_run(
+            f'useradd -d /home/{user} -m -s /bin/bash -u 1000 -g 1000 {user}', 
+            user='root'
+        )
+        if user_result.exit_code != 0:
+            print(f"Error creating user {user}: {user_result.output.decode()}")
+            return False
+        
+        # Set password
+        passwd_result = container.exec_run(
+            f'echo "{user}:{password}" | chpasswd', 
+            user='root'
+        )
+        if passwd_result.exit_code != 0:
+            print(f"Error setting password for {user}: {passwd_result.output.decode()}")
+            return False
+        
+        print(f"Successfully created user {user} in container {container_name}")
+        return True
+        
+    except Exception as e:
+        print(f"Error ensuring user exists: {e}")
+        return False
+
 @app.route('/api/instances/create', methods=['POST'])
 def create_instance():
     """Create a new OBS instance with real Docker container"""
@@ -568,6 +617,10 @@ def create_instance():
                     'com.obs-docker.user': user
                 }
             )
+            
+            # Ensure user exists in the container
+            if not ensure_user_exists(container_name, user, password or 'obs123'):
+                print(f"Warning: Failed to create user {user} in container {container_name}")
             
             # Get container info (handle both Python client and subprocess client)
             if hasattr(container, 'reload'):
@@ -1560,6 +1613,31 @@ def handle_stats_request():
         'system': obs_manager.system_stats,
         'containers': obs_manager.containers
     })
+
+@app.route('/api/container/<container_name>/create-user', methods=['POST'])
+def create_user_in_container(container_name):
+    """Create user in existing container"""
+    try:
+        data = request.json or {}
+        user = data.get('user', 'developer')
+        password = data.get('password', 'obs123')
+        
+        if not docker_adapter:
+            return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+        
+        if ensure_user_exists(container_name, user, password):
+            return jsonify({
+                'status': 'success', 
+                'message': f'User {user} created successfully in container {container_name}'
+            })
+        else:
+            return jsonify({
+                'status': 'error', 
+                'message': f'Failed to create user {user} in container {container_name}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # Ensure required directories exist

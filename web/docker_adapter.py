@@ -376,6 +376,27 @@ class SubprocessContainerWrapper:
                 return int(number * units[unit])
         
         return 0
+    
+    def exec_run(self, cmd, user=None):
+        """Execute command in container"""
+        docker_cmd = ['docker', 'exec']
+        if user:
+            docker_cmd.extend(['-u', user])
+        docker_cmd.extend([self._name, 'sh', '-c', cmd])
+        
+        try:
+            result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=30)
+            return type('ExecResult', (), {
+                'exit_code': result.returncode,
+                'output': result.stdout.encode('utf-8') if result.stdout else b'',
+                'stderr': result.stderr.encode('utf-8') if result.stderr else b''
+            })()
+        except Exception as e:
+            return type('ExecResult', (), {
+                'exit_code': 1,
+                'output': b'',
+                'stderr': str(e).encode('utf-8')
+            })()
 
 # Global adapter instance
 docker_adapter = DockerAdapter()

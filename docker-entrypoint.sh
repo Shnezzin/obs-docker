@@ -10,34 +10,45 @@ log() {
 
 log "Starting OBS Docker container initialization..."
 
-USER_ID=$(id -u)
-GROUP_ID=$(id -g)
-USER=${USER:-${DEFAULT_USER}}
-GROUP=${GROUP:-${USER}}
-PASSWD=${PASSWD:-${DEFAULT_PASSWD}}
+# Get user and password from environment variables
+USER=${DEFAULT_USER:-developer}
+PASSWD=${DEFAULT_PASSWD:-obs123}
+GROUP=${USER}
+
+# Use default UID/GID for the user (1000/1000) if not running as non-root
+if [[ $(id -u) -eq 0 ]]; then
+    USER_ID=1000
+    GROUP_ID=1000
+else
+    USER_ID=$(id -u)
+    GROUP_ID=$(id -g)
+fi
+
+log "Configuring user: $USER (UID: $USER_ID, GID: $GROUP_ID)"
 
 # Validate password strength (basic check)
 if [[ ${#PASSWD} -lt 8 ]]; then
     log "WARNING: Password is less than 8 characters. Consider using a stronger password."
 fi
 
+# Clear environment variables for security
 unset DEFAULT_USER DEFAULT_PASSWD
 
 # Add group
 log "Setting up group: $GROUP (GID: $GROUP_ID)"
-if [[ $GROUP_ID != "0" && ! $(getent group $GROUP 2>/dev/null) ]]; then
+if ! getent group $GROUP >/dev/null 2>&1; then
     if ! groupadd -g $GROUP_ID $GROUP; then
         log "ERROR: Failed to create group $GROUP"
         exit 1
     fi
     log "Created group: $GROUP"
 else
-    log "Group $GROUP already exists or is root"
+    log "Group $GROUP already exists"
 fi
 
 # Add user
 log "Setting up user: $USER (UID: $USER_ID)"
-if [[ $USER_ID != "0" && ! $(getent passwd $USER 2>/dev/null) ]]; then
+if ! getent passwd $USER >/dev/null 2>&1; then
     export HOME=/home/$USER
     if ! useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER; then
         log "ERROR: Failed to create user $USER"
@@ -45,7 +56,7 @@ if [[ $USER_ID != "0" && ! $(getent passwd $USER 2>/dev/null) ]]; then
     fi
     log "Created user: $USER with home directory: $HOME"
 else
-    log "User $USER already exists or is root"
+    log "User $USER already exists"
 fi
 
 # Revert permissions for security
@@ -56,7 +67,6 @@ fi
 
 if (( $# == 0 )); then
     # Set login user name
-    USER=$(whoami)
     log "Configuring RDP access for user: $USER"
 
     # Set login password
@@ -96,6 +106,7 @@ unset PASSWD
 log "Starting services with command: $*"
 log "Container initialization completed successfully"
 log "RDP should be available on port 3389"
+log "User $USER created with password"
 log "#############################"
 
 # Execute the main command
