@@ -175,6 +175,18 @@ class SubprocessContainerWrapper:
         return info.get('Config', {}).get('Labels', {})
     
     @property
+    def name(self):
+        info = self._get_info()
+        n = info.get('Names', '')
+        if isinstance(n, list):
+            return n[0]
+        elif isinstance(n, str):
+            return n
+        elif 'Name' in info:
+            return info['Name']
+        return ''
+    
+    @property
     def exists(self):
         info = self._get_info()
         return bool(info) and 'Id' in info
