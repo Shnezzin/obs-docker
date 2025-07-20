@@ -109,14 +109,19 @@ class DockerAdapter:
         """List containers with unified interface"""
         if not self.client:
             raise Exception("No Docker client available")
-        
         if self.client_type == 'python':
             return self.client.containers.list(all=all)
         else:
             # For subprocess client, return a list of container wrappers
+            def _extract_name(names):
+                if isinstance(names, list):
+                    return names[0].lstrip('/')
+                elif isinstance(names, str):
+                    return names.lstrip('/')
+                return ''
             container_data = self.client.list_containers(all=all)
-            return [SubprocessContainerWrapper(self.client, c['Names'][0].lstrip('/')) 
-                   for c in container_data if c.get('Names')]
+            return [SubprocessContainerWrapper(self.client, _extract_name(c['Names'])) 
+                    for c in container_data if c.get('Names')]
     
     # Add containers property for backward compatibility
     @property
