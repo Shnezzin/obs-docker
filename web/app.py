@@ -320,61 +320,83 @@ def api_instances():
         all_containers = docker_client.containers.list(all=True)
         print(f"Found {len(all_containers)} containers total")
         for idx, c in enumerate(all_containers):
-            print(f"Container {idx}: {c.name} (ID: {c.id[:12]}, Status: {c.status})")
+            print(f"Container {idx}: {c.name} (ID: {c.id[:12]}, Status: {c.status}, Labels: {c.labels}")
         
-        # Filter for OBS containers
+        # Filter for OBS containers - check both name and labels
         obs_containers = []
         for container in all_containers:
-            container_name = container.name.lower()
-            print(f"Checking container: {container_name}")
-            if 'obs' in container_name:
-                print(f"Found OBS container: {container_name}")
-                try:
-                    # Get container status (handle both Python client and subprocess client)
-                    if hasattr(container, 'status'):
-                        status = container.status
-                        created = container.attrs['Created']
-                        state = container.attrs['State']
-                    else:
-                        # Handle subprocess client response (dictionary)
-                        status = container.get('State', {}).get('Status', 'unknown')
-                        created = container.get('Created', '')
-                        state = container.get('State', {})
-                    
-                    # Format uptime
-                    uptime = 'N/A'
-                    if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
-                        try:
-                            started_at = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00'))
-                            uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
-                            print(f"Container {container_name} uptime: {uptime}")
-                        except (ValueError, TypeError) as e:
-                            print(f"Error parsing uptime for {container_name}: {e}")
-                            uptime = 'N/A'
-                    
-                    # Get ports
-                    ports_info = container.ports if hasattr(container, 'ports') else {}
-                    ports = {}
-                    if '3389/tcp' in ports_info and ports_info['3389/tcp']:
-                        ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
-                    if '5900/tcp' in ports_info and ports_info['5900/tcp']:
-                        ports['vnc'] = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
-                    
-                    container_info = {
-                        'id': container.id[:12],
-                        'name': container.name,
-                        'status': status,
-                        'image': container.image.tags[0] if hasattr(container, 'image') and container.image.tags else 'unknown',
-                        'created': created,
-                        'uptime': uptime,
-                        'ports': ports
-                    }
-                    print(f"Added container info: {container_info}")
-                    obs_containers.append(container_info)
-                    
-                except Exception as e:
-                    print(f"Error processing container {container_name}: {e}")
+            try:
+                container_name = container.name.lower()
+                container_labels = getattr(container, 'labels', {}) or {}
+                
+                # Check if this is an OBS container by name or label
+                is_obs_container = (
+                    'obs' in container_name or
+                    'com.obs-docker.instance' in container_labels or
+                    any('obs' in k.lower() or 'obs' in str(v).lower() 
+                        for k, v in container_labels.items())
+                )
+                
+                if not is_obs_container:
                     continue
+                    
+                print(f"Processing OBS container: {container_name}")
+                
+                # Get container status (handle both Python client and subprocess client)
+                if hasattr(container, 'status'):
+                    status = container.status
+                    created = container.attrs.get('Created', '')
+                    state = container.attrs.get('State', {})
+                else:
+                    # Handle subprocess client response (dictionary)
+                    status = container.get('State', {}).get('Status', 'unknown')
+                    created = container.get('Created', '')
+                    state = container.get('State', {})
+                
+                # Format uptime
+                uptime = 'N/A'
+                started_at = state.get('StartedAt')
+                if started_at and started_at != '0001-01-01T00:00:00Z':
+                    try:
+                        started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                        uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]
+                        print(f"Container {container_name} uptime: {uptime}")
+                    except (ValueError, TypeError) as e:
+                        print(f"Error parsing uptime for {container_name}: {e}")
+                
+                # Get ports
+                ports_info = getattr(container, 'ports', {}) or {}
+                ports = {}
+                if '3389/tcp' in ports_info and ports_info['3389/tcp']:
+                    ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
+                if '5900/tcp' in ports_info and ports_info['5900/tcp']:
+                    ports['vnc'] = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
+                
+                # Get image name safely
+                image_name = 'unknown'
+                try:
+                    if hasattr(container, 'image') and container.image:
+                        if hasattr(container.image, 'tags') and container.image.tags:
+                            image_name = container.image.tags[0]
+                except Exception as e:
+                    print(f"Error getting image name: {e}")
+                
+                container_info = {
+                    'id': getattr(container, 'id', '')[:12],
+                    'name': container_name,
+                    'status': status,
+                    'image': image_name,
+                    'created': created,
+                    'uptime': uptime,
+                    'ports': ports,
+                    'labels': container_labels
+                }
+                print(f"Added container info: {container_info}")
+                obs_containers.append(container_info)
+                
+            except Exception as e:
+                print(f"Error processing container: {e}")
+                continue
         
         print(f"Returning {len(obs_containers)} OBS containers")
         return jsonify({
