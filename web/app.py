@@ -323,23 +323,23 @@ def api_instances():
         container_infos = []
         for idx, container in enumerate(all_containers):
             try:
-                debug_log(f"[DEBUG] Container raw object: {repr(container)}")
-                debug_log(f"[DEBUG] Container dir: {dir(container)}")
-                container_name = container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0]
-                container_labels = getattr(container, 'labels', None)
-                if container_labels is None:
-                    container_labels = container.get('Labels', {})
-                if isinstance(container_labels, str):
-                    container_labels = parse_label_string(container_labels)
-                # Status und weitere Infos holen
-                if hasattr(container, 'status'):
-                    status = container.status
-                    created = container.attrs.get('Created', '')
-                    state = container.attrs.get('State', {})
+                # Unterscheide Wrapper (SubprocessContainerWrapper) und Dict
+                if hasattr(container, 'name'):
+                    container_name = container.name
+                    container_id = getattr(container, 'id', '')[:12]
+                    status = getattr(container, 'status', '')
+                    created = getattr(container, 'attrs', {}).get('Created', '')
+                    state = getattr(container, 'attrs', {}).get('State', {})
+                    container_labels = getattr(container, 'labels', {})
                 else:
+                    container_name = container.get('Names', ['unknown'])[0]
+                    container_id = container.get('Id', '')[:12]
                     status = container.get('State', {}).get('Status', 'unknown')
                     created = container.get('Created', '')
                     state = container.get('State', {})
+                    container_labels = container.get('Labels', {})
+                    if isinstance(container_labels, str):
+                        container_labels = parse_label_string(container_labels)
                 # Uptime
                 uptime = 'N/A'
                 started_at = state.get('StartedAt')
@@ -350,7 +350,7 @@ def api_instances():
                     except (ValueError, TypeError):
                         pass
                 # Ports
-                ports_info = getattr(container, 'ports', {}) or {}
+                ports_info = getattr(container, 'ports', {}) if hasattr(container, 'ports') else container.get('Ports', {})
                 ports = {}
                 if '3389/tcp' in ports_info and ports_info['3389/tcp']:
                     ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
@@ -362,10 +362,12 @@ def api_instances():
                     if hasattr(container, 'image') and container.image:
                         if hasattr(container.image, 'tags') and container.image.tags:
                             image_name = container.image.tags[0]
+                    elif not hasattr(container, 'image'):
+                        image_name = container.get('Image', 'unknown')
                 except Exception:
                     pass
                 container_info = {
-                    'id': getattr(container, 'id', '')[:12],
+                    'id': container_id,
                     'name': container_name,
                     'status': status,
                     'image': image_name,
@@ -373,7 +375,6 @@ def api_instances():
                     'uptime': uptime,
                     'ports': ports,
                     'labels': container_labels,
-                    # Zusätzliche Felder für das Frontend:
                     'template': container_labels.get('com.obs-docker.template', ''),
                     'user': container_labels.get('com.obs-docker.user', ''),
                     'rdp_port': ports.get('rdp', ''),
