@@ -27,8 +27,10 @@ COPY templates/ templates/
 # Create necessary directories
 RUN mkdir -p /opt/obs-config /opt/obs-instances /opt/obs-backups
 
-# Create non-root user
-RUN useradd -m -u 1000 webuser && \
+# Create non-root user and add to docker group for Docker socket access
+RUN groupadd -g 999 docker || true && \
+    useradd -m -u 1000 webuser && \
+    usermod -aG docker webuser && \
     chown -R webuser:webuser /app /opt/obs-config /opt/obs-instances /opt/obs-backups
 
 # Switch to non-root user
