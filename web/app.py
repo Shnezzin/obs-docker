@@ -350,7 +350,7 @@ def instances():
 def api_instances():
     """Get all Docker containers (nicht nur OBS)"""
     try:
-                if not docker_adapter:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available',
@@ -448,13 +448,15 @@ def api_instances():
             return name[1:] if isinstance(name, str) and name.startswith('/') else name
         return jsonify({
             'status': 'success',
-            'instances': {strip_leading_slash(c['name']): c for c in container_infos}
+            'instances': container_infos,
+            'count': len(container_infos)
         })
     except Exception as e:
-        print(f"Error in list_instances: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': f'Failed to list instances: {str(e)}'
+            'message': str(e),
+            'instances': [],
+            'count': 0
         }), 500
 
 def parse_label_string(label_str):
@@ -1121,10 +1123,10 @@ def system_info():
             disk_free = 0
         # Get Docker version safely
         docker_version = 'Not available'
-        if docker_client:
+        if docker_adapter:
             try:
-                        version_info = docker_adapter.version()
-        print('[DEBUG] docker_adapter.version:', version_info)
+                version_info = docker_adapter.version()
+                print('[DEBUG] docker_adapter.version:', version_info)
                 docker_version = version_info['Version']
             except Exception as e:
                 print('[DEBUG] docker_adapter.version() error:', e)
@@ -1144,9 +1146,9 @@ def system_info():
                 'executable': sys.executable or 'Unknown'
             },
             'docker': {
-                'available': docker_client is not None,
+                'available': docker_adapter is not None,
                 'version': docker_version,
-                'status': 'Connected' if docker_client else 'Not available'
+                'status': 'Connected' if docker_adapter else 'Not available'
             },
             'obs_manager': {
                 'version': '2.0.0',
