@@ -155,15 +155,25 @@ class OBSManager:
                 self.containers = {}
                 
                 for container in containers:
-                    # Entferne die Filterung auf 'obs' im Namen, zeige ALLE Container
+                    print('[DEBUG] update_stats: container type:', type(container))
+                    print('[DEBUG] update_stats: container dir:', dir(container))
+                    # Robust extraction for both wrapper and dict
                     if hasattr(container, 'status'):
                         status = container.status
-                        created = container.attrs['Created']
-                        state = container.attrs['State']
-                    else:
+                        created = getattr(container, 'attrs', {}).get('Created', '') if hasattr(container, 'attrs') else ''
+                        state = getattr(container, 'attrs', {}).get('State', {}) if hasattr(container, 'attrs') else {}
+                    elif hasattr(container, '_get_info'):
+                        info = container._get_info()
+                        status = info.get('State', {}).get('Status', 'unknown')
+                        created = info.get('Created', '')
+                        state = info.get('State', {})
+                    elif isinstance(container, dict):
                         status = container.get('State', {}).get('Status', 'unknown')
                         created = container.get('Created', '')
                         state = container.get('State', {})
+                    else:
+                        print('[DEBUG] Unknown container type:', type(container))
+                        continue
                     # Format uptime
                     uptime = 'N/A'
                     if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
@@ -172,25 +182,68 @@ class OBSManager:
                             uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
                         except (ValueError, TypeError):
                             uptime = 'N/A'
+                    # Name
+                    if hasattr(container, 'name'):
+                        name = container.name
+                    elif hasattr(container, '_name'):
+                        name = container._name
+                    elif hasattr(container, '_get_info'):
+                        info = container._get_info()
+                        name = info.get('Names', ['unknown'])[0] if isinstance(info.get('Names'), list) else info.get('Names', 'unknown')
+                    elif isinstance(container, dict):
+                        name = container.get('Names', ['unknown'])[0]
+                    else:
+                        name = 'unknown'
+                    # Image
+                    if hasattr(container, 'image') and hasattr(container.image, 'tags') and container.image.tags:
+                        image = container.image.tags[0]
+                    elif hasattr(container, '_get_info'):
+                        info = container._get_info()
+                        image = info.get('Image', 'unknown')
+                    elif isinstance(container, dict):
+                        image = container.get('Image', 'unknown')
+                    else:
+                        image = 'unknown'
+                    # Ports
+                    if hasattr(container, 'ports'):
+                        ports = container.ports
+                    elif hasattr(container, '_get_info'):
+                        info = container._get_info()
+                        ports = info.get('NetworkSettings', {}).get('Ports', {})
+                    elif isinstance(container, dict):
+                        ports = container.get('Ports', {})
+                    else:
+                        ports = {}
+                    # Labels
+                    if hasattr(container, 'labels'):
+                        labels = container.labels
+                    elif hasattr(container, '_get_info'):
+                        info = container._get_info()
+                        labels = info.get('Config', {}).get('Labels', {})
+                    elif isinstance(container, dict):
+                        labels = container.get('Labels', {})
+                    else:
+                        labels = {}
                     stats = {
-                        'name': container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0],
+                        'name': name,
                         'status': status,
-                        'image': container.image.tags[0] if hasattr(container, 'image') and container.image and hasattr(container.image, 'tags') and container.image.tags else (container.get('Image', 'unknown') if not hasattr(container, 'image') else 'unknown'),
+                        'image': image,
                         'created': created,
                         'uptime': uptime,
-                        'ports': container.ports if hasattr(container, 'ports') else container.get('Ports', {}),
-                        'labels': container.labels if hasattr(container, 'labels') else container.get('Labels', {}),
+                        'ports': ports,
+                        'labels': labels,
                     }
+                    print('[DEBUG] update_stats: stats:', stats)
                     # Get container stats if running
-                    if status == 'running':
+                    if status == 'running' and hasattr(container, 'stats'):
                         try:
                             container_stats = container.stats(stream=False)
                             stats['cpu_percent'] = self.calculate_cpu_percent(container_stats)
                             stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
                             stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
-                        except:
-                            pass
-                    self.containers[stats['name']] = stats
+                        except Exception as e:
+                            print('[DEBUG] update_stats: error getting stats:', e)
+                    self.containers[name] = stats
             else:
                 # Standalone mode - no container stats
                 self.containers = {}
