@@ -387,9 +387,11 @@ def api_instances():
         debug_log(f"[DEBUG] container_infos: {container_infos}")
         debug_log(f"[DEBUG] instance dict: {[c['name'] for c in container_infos]}")
         # Rückgabe als Dict statt Liste
+        def strip_leading_slash(name):
+            return name[1:] if isinstance(name, str) and name.startswith('/') else name
         return jsonify({
             'status': 'success',
-            'instances': {c['name']: c for c in container_infos}
+            'instances': {strip_leading_slash(c['name']): c for c in container_infos}
         })
     except Exception as e:
         print(f"Error in list_instances: {str(e)}")
