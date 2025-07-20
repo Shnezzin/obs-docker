@@ -76,22 +76,16 @@ class DockerSubprocessClient:
         if all:
             cmd.append('-a')
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        print("[DEBUG] docker ps output:")
-        print(result.stdout)
         if result.returncode != 0:
             return []
         containers = []
         for line in result.stdout.strip().split('\n'):
-            print(f"[DEBUG] docker ps line: {line}")
             if line.strip():
                 try:
                     obj = json.loads(line)
-                    print(f"[DEBUG] parsed container: {obj}")
                     containers.append(obj)
                 except json.JSONDecodeError as e:
-                    print(f"[DEBUG] JSON decode error: {e} in line: {line}")
                     continue
-        print(f"[DEBUG] parsed containers: {containers}")
         return containers
     
     def create_container(self, image, name, ports=None, environment=None, volumes=None, network=None, labels=None):

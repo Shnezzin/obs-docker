@@ -299,7 +299,9 @@ def start_container(container_name):
     if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_adapter.containers.get(container_name)
+        container = find_container_by_name_or_instance(container_name)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
         container.start()
         return jsonify({'status': 'success', 'message': f'Container {container_name} started'})
     except Exception as e:
@@ -311,7 +313,9 @@ def stop_container(container_name):
     if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_adapter.containers.get(container_name)
+        container = find_container_by_name_or_instance(container_name)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
         container.stop()
         return jsonify({'status': 'success', 'message': f'Container {container_name} stopped'})
     except Exception as e:
@@ -323,7 +327,9 @@ def restart_container(container_name):
     if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_adapter.containers.get(container_name)
+        container = find_container_by_name_or_instance(container_name)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
         container.restart()
         return jsonify({'status': 'success', 'message': f'Container {container_name} restarted'})
     except Exception as e:
@@ -335,7 +341,9 @@ def container_logs(container_name):
     if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_adapter.containers.get(container_name)
+        container = find_container_by_name_or_instance(container_name)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
         logs = container.logs(tail=100).decode('utf-8')
         return jsonify({'logs': logs})
     except Exception as e:
@@ -427,9 +435,20 @@ def api_instances():
                         image_name = container.get('Image', 'unknown')
                 except Exception:
                     pass
+                # Extrahiere den Instanz-Namen aus den Labels
+                instance_name = container_labels.get('com.obs-docker.instance', '')
+                if instance_name:
+                    # Verwende den Instanz-Namen als Anzeigename
+                    display_name = f"obs-{instance_name}"
+                else:
+                    # Fallback auf Container-Namen
+                    display_name = container_name
+                
                 container_info = {
                     'id': container_id,
                     'name': container_name,
+                    'display_name': display_name,
+                    'instance_name': instance_name,
                     'status': status,
                     'image': image_name,
                     'created': created,
@@ -443,13 +462,17 @@ def api_instances():
                 container_infos.append(container_info)
             except Exception as e:
                 continue
-        # Rückgabe als Dict statt Liste
-        def strip_leading_slash(name):
-            return name[1:] if isinstance(name, str) and name.startswith('/') else name
+        # Konvertiere Liste zu Dict mit Namen als Schlüssel
+        instances_dict = {}
+        for container_info in container_infos:
+            # Verwende display_name als Schlüssel, falls verfügbar
+            key = container_info.get('display_name', container_info.get('name', 'unknown'))
+            instances_dict[key] = container_info
+        
         return jsonify({
             'status': 'success',
-            'instances': container_infos,
-            'count': len(container_infos)
+            'instances': instances_dict,
+            'count': len(instances_dict)
         })
     except Exception as e:
         return jsonify({
@@ -478,7 +501,13 @@ def ensure_user_exists(container_name, user, password):
             print(f"[DEBUG] Container {container_name} not found")
             return False
         
-        print(f"[DEBUG] Container {container_name} found, checking if user {user} exists")
+        # Check if container is running
+        container_info = container.attrs if hasattr(container, 'attrs') else container
+        if isinstance(container_info, dict) and container_info.get('State', {}).get('Status') != 'running':
+            print(f"[DEBUG] Container {container_name} is not running (status: {container_info.get('State', {}).get('Status')})")
+            return False
+        
+        print(f"[DEBUG] Container {container_name} found and running, checking if user {user} exists")
         
         # Check if user exists
         result = container.exec_run(f'id {user}', user='root')
@@ -712,6 +741,44 @@ def create_instance():
 
 def get_container_name(instance_name):
     return instance_name if instance_name.startswith('obs-') else f'obs-{instance_name}'
+
+def find_container_by_name_or_instance(name_or_instance):
+    """Find container by name or instance name"""
+    if not docker_adapter:
+        return None
+    
+    # Try direct container name first
+    try:
+        container = docker_adapter.containers.get(name_or_instance)
+        if container:
+            return container
+    except:
+        pass
+    
+    # Try as instance name (add obs- prefix)
+    container_name = get_container_name(name_or_instance)
+    try:
+        container = docker_adapter.containers.get(container_name)
+        if container:
+            return container
+    except:
+        pass
+    
+    # Try to find by instance label
+    try:
+        all_containers = docker_adapter.containers.list(all=True)
+        for container in all_containers:
+            if hasattr(container, 'labels'):
+                labels = container.labels
+            else:
+                labels = container.get('Labels', {})
+            
+            if labels.get('com.obs-docker.instance') == name_or_instance:
+                return container
+    except:
+        pass
+    
+    return None
 
 @app.route('/api/instances/<instance_name>/start', methods=['POST'])
 def start_instance(instance_name):
@@ -1683,16 +1750,21 @@ def create_user_in_container(container_name):
         if not docker_adapter:
             return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
         
-        if ensure_user_exists(container_name, user, password):
+        # Find container by name or instance name
+        container = find_container_by_name_or_instance(container_name)
+        if container is None:
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
+        
+        # Get actual container name for user creation
+        actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
+        
+        if ensure_user_exists(actual_container_name, user, password):
             return jsonify({
                 'status': 'success', 
                 'message': f'User {user} created successfully in container {container_name}'
             })
         else:
-            return jsonify({
-                'status': 'error', 
-                'message': f'Failed to create user {user} in container {container_name}'
-            }), 500
+            return jsonify({'status': 'error', 'message': f'Failed to create user {user} in container {container_name}'}), 500
             
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

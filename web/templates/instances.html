@@ -243,9 +243,13 @@
         }
 
         filteredInstances.forEach(([name, instance]) => {
+            // Verwende display_name falls verfügbar, sonst den ursprünglichen Namen
+            const displayName = instance.display_name || name;
+            // Verwende instance_name für API-Aufrufe, falls verfügbar
+            const apiName = instance.instance_name || name;
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td><strong>${name}</strong></td>
+                <td><strong>${displayName}</strong></td>
                 <td>
                     <span class="badge bg-${getStatusColor(instance.status)}">
                         <i class="fas fa-${getStatusIcon(instance.status)}"></i>
@@ -266,24 +270,24 @@
                 <td>
                     <div class="btn-group" role="group">
                         ${instance.status === 'running' ? `
-                            <button class="btn btn-sm btn-warning" onclick="stopInstance('${name}')" title="Stop">
+                            <button class="btn btn-sm btn-warning" onclick="stopInstance('${apiName}')" title="Stop">
                                 <i class="fas fa-stop"></i>
                             </button>
-                            <button class="btn btn-sm btn-info" onclick="restartInstance('${name}')" title="Restart">
+                            <button class="btn btn-sm btn-info" onclick="restartInstance('${apiName}')" title="Restart">
                                 <i class="fas fa-redo"></i>
                             </button>
                         ` : `
-                            <button class="btn btn-sm btn-success" onclick="startInstance('${name}')" title="Start">
+                            <button class="btn btn-sm btn-success" onclick="startInstance('${apiName}')" title="Start">
                                 <i class="fas fa-play"></i>
                             </button>
                         `}
-                        <button class="btn btn-sm btn-primary" onclick="connectInstanceRDP('${name}')" title="Connect RDP">
+                        <button class="btn btn-sm btn-primary" onclick="connectInstanceRDP('${apiName}')" title="Connect RDP">
                             <i class="fas fa-desktop"></i>
                         </button>
-                        <button class="btn btn-sm btn-secondary" onclick="connectInstanceVNC('${name}')" title="Connect VNC">
+                        <button class="btn btn-sm btn-secondary" onclick="connectInstanceVNC('${apiName}')" title="Connect VNC">
                             <i class="fas fa-network-wired"></i>
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="removeInstance('${name}')" title="Remove">
+                        <button class="btn btn-sm btn-danger" onclick="removeInstance('${apiName}')" title="Remove">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -449,7 +453,8 @@
         
         for (const [name, instance] of stoppedInstances) {
             try {
-                await apiCall(`/api/instances/${name}/start`, { method: 'POST' });
+                const apiName = instance.instance_name || name;
+                await apiCall(`/api/instances/${apiName}/start`, { method: 'POST' });
             } catch (error) {
                 console.error(`Error starting ${name}:`, error);
             }
@@ -469,7 +474,8 @@
         
         for (const [name, instance] of runningInstances) {
             try {
-                await apiCall(`/api/instances/${name}/stop`, { method: 'POST' });
+                const apiName = instance.instance_name || name;
+                await apiCall(`/api/instances/${apiName}/stop`, { method: 'POST' });
             } catch (error) {
                 console.error(`Error stopping ${name}:`, error);
             }
@@ -517,7 +523,8 @@
         
         for (const [name, instance] of stoppedInstances) {
             try {
-                await apiCall(`/api/instances/${name}/remove`, { method: 'DELETE' });
+                const apiName = instance.instance_name || name;
+                await apiCall(`/api/instances/${apiName}/remove`, { method: 'DELETE' });
             } catch (error) {
                 console.error(`Error removing ${name}:`, error);
             }
