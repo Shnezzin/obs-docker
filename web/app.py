@@ -94,13 +94,13 @@ try:
                 print(f"❌ Custom socket failed: {e3}")
     
     if docker_client:
-        version = docker_client.version()
+        version = docker_adapter.version()
         print(f"📊 Docker version: {version.get('Version', 'Unknown')}")
         print(f"📊 API version: {version.get('ApiVersion', 'Unknown')}")
         
         # Test basic operations
         try:
-            containers = docker_client.containers.list(all=True, limit=1)
+            containers = docker_adapter.containers.list(all=True)
             print(f"📦 Docker API test successful - found {len(containers)} containers")
         except Exception as test_e:
             print(f"⚠️ Docker API test failed: {test_e}")
@@ -350,16 +350,16 @@ def instances():
 def api_instances():
     """Get all Docker containers (nicht nur OBS)"""
     try:
-        if not docker_client:
+                if not docker_adapter:
             return jsonify({
-                'status': 'error',
+                'status': 'error', 
                 'message': 'Docker service not available',
                 'instances': [],
                 'count': 0
             }), 503
         
         # Alle Container auflisten
-        all_containers = docker_client.containers.list(all=True)
+        all_containers = docker_adapter.containers.list(all=True)
         print(f"Found {len(all_containers)} containers total")
         container_infos = []
         for idx, container in enumerate(all_containers):
@@ -530,14 +530,14 @@ def create_instance():
             return jsonify({'status': 'error', 'message': 'Instance name too long (max 50 characters)'}), 400
         
         # Check if Docker client is available
-        if not docker_client:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available. Please ensure Docker is running and accessible.'
             }), 503
         
         # Check if using subprocess client
-        is_subprocess_client = hasattr(docker_client, 'create_container')
+        is_subprocess_client = hasattr(docker_adapter, 'create_container')
         
         try:
             # Create OBS container with the main OBS Docker image
@@ -548,7 +548,7 @@ def create_instance():
             try:
                 import docker.errors
                 try:
-                    existing_container = docker_client.get_container(container_name)
+                    existing_container = docker_adapter.get_container(container_name)
                 except Exception as e:
                     if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 404:
                         existing_container = None
@@ -593,7 +593,7 @@ def create_instance():
                 }), 500
             
             # Create and start the container
-            container = docker_client.create_container(
+            container = docker_adapter.create_container(
                 image='obs-docker:latest',  # Use the main OBS Docker image
                 name=container_name,
                 ports={
@@ -628,20 +628,40 @@ def create_instance():
                 ports_info = container.attrs['NetworkSettings']['Ports']
                 container_id = container.id[:12]
                 container_status = container.status
-            else:
-                # Subprocess client already returns container info
+            elif isinstance(container, dict):
+                # Subprocess client returns dict
                 ports_info = container.get('NetworkSettings', {}).get('Ports', {})
                 container_id = container.get('Id', '')[:12]
                 container_status = container.get('State', {}).get('Status', 'unknown')
+            else:
+                # SubprocessContainerWrapper
+                ports_info = container.ports
+                container_id = container.id
+                container_status = container.status
             
             # Extract assigned ports (handle both client types)
             rdp_port = 'N/A'
             vnc_port = 'N/A'
             
-            if '3389/tcp' in ports_info and ports_info['3389/tcp']:
-                rdp_port = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
-            if '5900/tcp' in ports_info and ports_info['5900/tcp']:
-                vnc_port = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
+            if isinstance(ports_info, dict):
+                if '3389/tcp' in ports_info and ports_info['3389/tcp']:
+                    rdp_port = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
+                if '5900/tcp' in ports_info and ports_info['5900/tcp']:
+                    vnc_port = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
+            else:
+                # For SubprocessContainerWrapper, ports might be in different format
+                # We'll need to get the actual port mapping from docker inspect
+                try:
+                    container_info = docker_adapter.get_container(container_name)
+                    if hasattr(container_info, '_get_info'):
+                        info = container_info._get_info()
+                        ports = info.get('NetworkSettings', {}).get('Ports', {})
+                        if '3389/tcp' in ports and ports['3389/tcp']:
+                            rdp_port = ports['3389/tcp'][0].get('HostPort', 'N/A')
+                        if '5900/tcp' in ports and ports['5900/tcp']:
+                            vnc_port = ports['5900/tcp'][0].get('HostPort', 'N/A')
+                except:
+                    pass
             
             instance_data = {
                 'name': name,
@@ -686,7 +706,7 @@ def get_container_name(instance_name):
 def start_instance(instance_name):
     """Start an OBS instance container"""
     try:
-        if not docker_client:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -695,7 +715,7 @@ def start_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_client.containers.get(container_name)
+            container = docker_adapter.containers.get(container_name)
             
             if container.status == 'running':
                 return jsonify({
@@ -704,7 +724,8 @@ def start_instance(instance_name):
                 })
             
             container.start()
-            container.reload()
+            if hasattr(container, 'reload'):
+                container.reload()
             
             return jsonify({
                 'status': 'success',
@@ -735,7 +756,7 @@ def start_instance(instance_name):
 def stop_instance(instance_name):
     """Stop an OBS instance container"""
     try:
-        if not docker_client:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -744,7 +765,7 @@ def stop_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_client.containers.get(container_name)
+            container = docker_adapter.containers.get(container_name)
             
             if container.status == 'exited':
                 return jsonify({
@@ -753,7 +774,8 @@ def stop_instance(instance_name):
                 })
             
             container.stop()
-            container.reload()
+            if hasattr(container, 'reload'):
+                container.reload()
             
             return jsonify({
                 'status': 'success',
@@ -784,7 +806,7 @@ def stop_instance(instance_name):
 def restart_instance(instance_name):
     """Restart an OBS instance container"""
     try:
-        if not docker_client:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -793,10 +815,11 @@ def restart_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_client.containers.get(container_name)
+            container = docker_adapter.containers.get(container_name)
             
             container.restart()
-            container.reload()
+            if hasattr(container, 'reload'):
+                container.reload()
             
             return jsonify({
                 'status': 'success',
@@ -827,7 +850,7 @@ def restart_instance(instance_name):
 def remove_instance(instance_name):
     """Remove an OBS instance container"""
     try:
-        if not docker_client:
+        if not docker_adapter:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -836,7 +859,7 @@ def remove_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_client.containers.get(container_name)
+            container = docker_adapter.containers.get(container_name)
             
             # Stop container if running
             if container.status == 'running':
@@ -847,13 +870,13 @@ def remove_instance(instance_name):
             
             # Clean up named volumes
             try:
-                docker_client.volumes.get(f'obs-config-{instance_name}').remove()
-            except docker.errors.NotFound:
+                docker_adapter.volumes.get(f'obs-config-{instance_name}').remove()
+            except Exception:
                 pass
             
             try:
-                docker_client.volumes.get(f'obs-scenes-{instance_name}').remove()
-            except docker.errors.NotFound:
+                docker_adapter.volumes.get(f'obs-scenes-{instance_name}').remove()
+            except Exception:
                 pass
             
             return jsonify({
@@ -1100,11 +1123,11 @@ def system_info():
         docker_version = 'Not available'
         if docker_client:
             try:
-                version_info = docker_client.version()
-                print('[DEBUG] docker_client.version:', version_info)
+                        version_info = docker_adapter.version()
+        print('[DEBUG] docker_adapter.version:', version_info)
                 docker_version = version_info['Version']
             except Exception as e:
-                print('[DEBUG] docker_client.version() error:', e)
+                print('[DEBUG] docker_adapter.version() error:', e)
                 docker_version = 'Connected but version unavailable'
         system_info = {
             'platform': {

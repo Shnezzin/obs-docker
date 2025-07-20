@@ -15,14 +15,9 @@ USER=${DEFAULT_USER:-developer}
 PASSWD=${DEFAULT_PASSWD:-obs123}
 GROUP=${USER}
 
-# Use default UID/GID for the user (1000/1000) if not running as non-root
-if [[ $(id -u) -eq 0 ]]; then
-    USER_ID=1000
-    GROUP_ID=1000
-else
-    USER_ID=$(id -u)
-    GROUP_ID=$(id -g)
-fi
+# Always use UID/GID 1000 for the user (standard for non-root users)
+USER_ID=1000
+GROUP_ID=1000
 
 log "Configuring user: $USER (UID: $USER_ID, GID: $GROUP_ID)"
 
