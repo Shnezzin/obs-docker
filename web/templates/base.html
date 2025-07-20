@@ -210,13 +210,51 @@
         }
         
         function showLoading() {
-            const modal = new bootstrap.Modal(document.getElementById('loadingModal'));
-            modal.show();
+            try {
+                const loadingElement = document.getElementById('loadingModal');
+                if (loadingElement) {
+                    const modal = new bootstrap.Modal(loadingElement);
+                    modal.show();
+                    console.log('Loading modal shown');
+                } else {
+                    console.warn('Loading modal element not found');
+                }
+            } catch (error) {
+                console.error('Error showing loading modal:', error);
+            }
         }
         
         function hideLoading() {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('loadingModal'));
-            if (modal) modal.hide();
+            try {
+                const loadingElement = document.getElementById('loadingModal');
+                if (loadingElement) {
+                    const modal = bootstrap.Modal.getInstance(loadingElement);
+                    if (modal) {
+                        modal.hide();
+                        console.log('Loading modal hidden');
+                    } else {
+                        // Force hide if modal instance doesn't exist
+                        loadingElement.style.display = 'none';
+                        loadingElement.classList.remove('show');
+                        document.body.classList.remove('modal-open');
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) backdrop.remove();
+                        console.log('Loading modal force hidden');
+                    }
+                } else {
+                    console.warn('Loading modal element not found for hiding');
+                }
+            } catch (error) {
+                console.error('Error hiding loading modal:', error);
+                // Force cleanup on error
+                try {
+                    document.body.classList.remove('modal-open');
+                    const backdrop = document.querySelector('.modal-backdrop');
+                    if (backdrop) backdrop.remove();
+                } catch (e) {
+                    console.error('Error in force cleanup:', e);
+                }
+            }
         }
         
         function refreshData() {
@@ -225,8 +263,13 @@
         
         // API helper functions
         async function apiCall(url, options = {}) {
+            let loadingShown = false;
             try {
                 showLoading();
+                loadingShown = true;
+                
+                console.log(`API Call: ${url}`, options);
+                
                 const response = await fetch(url, {
                     headers: {
                         'Content-Type': 'application/json',
@@ -235,18 +278,26 @@
                     ...options
                 });
                 
-                const data = await response.json();
+                console.log(`API Response: ${response.status}`, response);
                 
                 if (!response.ok) {
-                    throw new Error(data.message || 'API call failed');
+                    const errorText = await response.text();
+                    console.error(`API Error: ${response.status}`, errorText);
+                    throw new Error(`API Error (${response.status}): ${errorText}`);
                 }
+                
+                const data = await response.json();
+                console.log('API Data:', data);
                 
                 return data;
             } catch (error) {
-                showToast(error.message, 'danger');
+                console.error('API Call Error:', error);
+                showToast(`API Error: ${error.message}`, 'danger');
                 throw error;
             } finally {
-                hideLoading();
+                if (loadingShown) {
+                    hideLoading();
+                }
             }
         }
         
@@ -262,7 +313,13 @@
         });
         
         socket.on('stats_update', function(data) {
-            updateStats(data);
+            // Only call updateStats if it exists (dashboard/monitoring pages)
+            if (typeof updateStats === 'function') {
+                updateStats(data);
+            } else {
+                // For other pages, just log the stats update
+                console.log('Stats update received:', data);
+            }
         });
         
         // Update active nav link
