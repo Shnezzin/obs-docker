@@ -304,7 +304,7 @@ def instances():
     """Instance management page"""
     return render_template('instances.html')
 
-@app.route('/api/instances')
+@app.route('/api/instances', methods=['GET'])
 def api_instances():
     """Get all OBS instances"""
     try:
@@ -316,77 +316,78 @@ def api_instances():
                 'count': 0
             }), 503
         
-        try:
-            # Get all containers with obs-docker labels
-            containers = docker_client.list_containers(all=True)
-            # Filter containers with OBS Docker labels
-            containers = [c for c in containers if c.labels.get('com.obs-docker.instance')]
-            
-            instances = []
-            for container in containers:
-                labels = container.labels
-                instance_name = labels.get('com.obs-docker.instance', 'unknown')
-                
-                # Get port mappings
-                ports_info = container.attrs['NetworkSettings']['Ports']
-                rdp_port = 'N/A'
-                vnc_port = 'N/A'
-                
-                if container.status == 'running':
-                    rdp_mapping = ports_info.get('3389/tcp', [])
-                    vnc_mapping = ports_info.get('5900/tcp', [])
-                    rdp_port = rdp_mapping[0]['HostPort'] if rdp_mapping else 'N/A'
-                    vnc_port = vnc_mapping[0]['HostPort'] if vnc_mapping else 'N/A'
-                
-                # Calculate uptime for running containers
-                uptime = 'N/A'
-                if container.status == 'running':
-                    started_at = container.attrs['State']['StartedAt']
-                    if started_at:
-                        from datetime import datetime
-                        import dateutil.parser
-                        start_time = dateutil.parser.parse(started_at)
-                        uptime = str(datetime.now(start_time.tzinfo) - start_time).split('.')[0]  # Remove microseconds
-                        uptime = f'{int(uptime.split(" days, ")[0])}d {uptime.split(" days, ")[1]}' if ' days, ' in uptime else uptime
-                else:
+        # Debug: List all containers to see what's available
+        all_containers = docker_client.containers.list(all=True)
+        print(f"Found {len(all_containers)} containers total")
+        for idx, c in enumerate(all_containers):
+            print(f"Container {idx}: {c.name} (ID: {c.id[:12]}, Status: {c.status})")
+        
+        # Filter for OBS containers
+        obs_containers = []
+        for container in all_containers:
+            container_name = container.name.lower()
+            print(f"Checking container: {container_name}")
+            if 'obs' in container_name:
+                print(f"Found OBS container: {container_name}")
+                try:
+                    # Get container status (handle both Python client and subprocess client)
+                    if hasattr(container, 'status'):
+                        status = container.status
+                        created = container.attrs['Created']
+                        state = container.attrs['State']
+                    else:
+                        # Handle subprocess client response (dictionary)
+                        status = container.get('State', {}).get('Status', 'unknown')
+                        created = container.get('Created', '')
+                        state = container.get('State', {})
+                    
+                    # Format uptime
                     uptime = 'N/A'
-                
-                instance_data = {
-                    'name': instance_name,
-                    'container_id': container.id[:12],
-                    'container_name': container.name,
-                    'status': container.status,
-                    'template': labels.get('com.obs-docker.template', 'unknown'),
-                    'user': labels.get('com.obs-docker.user', 'unknown'),
-                    'created': container.attrs['Created'],
-                    'uptime': uptime,
-                    'ports': {
-                        'rdp': rdp_port,
-                        'vnc': vnc_port
-                    },
-                    'access': {
-                        'rdp_url': f'rdp://localhost:{rdp_port}' if rdp_port != 'N/A' else None,
-                        'vnc_url': f'vnc://localhost:{vnc_port}' if vnc_port != 'N/A' else None
+                    if 'StartedAt' in state and state['StartedAt'] != '0001-01-01T00:00:00Z':
+                        try:
+                            started_at = datetime.fromisoformat(state['StartedAt'].replace('Z', '+00:00'))
+                            uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]  # Remove microseconds
+                            print(f"Container {container_name} uptime: {uptime}")
+                        except (ValueError, TypeError) as e:
+                            print(f"Error parsing uptime for {container_name}: {e}")
+                            uptime = 'N/A'
+                    
+                    # Get ports
+                    ports_info = container.ports if hasattr(container, 'ports') else {}
+                    ports = {}
+                    if '3389/tcp' in ports_info and ports_info['3389/tcp']:
+                        ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
+                    if '5900/tcp' in ports_info and ports_info['5900/tcp']:
+                        ports['vnc'] = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
+                    
+                    container_info = {
+                        'id': container.id[:12],
+                        'name': container.name,
+                        'status': status,
+                        'image': container.image.tags[0] if hasattr(container, 'image') and container.image.tags else 'unknown',
+                        'created': created,
+                        'uptime': uptime,
+                        'ports': ports
                     }
-                }
-                instances.append(instance_data)
-            
-            return jsonify({
-                'status': 'success',
-                'instances': instances,
-                'count': len(instances)
-            })
-            
-        except docker.errors.APIError as e:
-            return jsonify({
-                'status': 'error',
-                'message': f'Docker API error: {str(e)}',
-                'instances': [],
-                'count': 0
-            }), 500
-            
+                    print(f"Added container info: {container_info}")
+                    obs_containers.append(container_info)
+                    
+                except Exception as e:
+                    print(f"Error processing container {container_name}: {e}")
+                    continue
+        
+        print(f"Returning {len(obs_containers)} OBS containers")
+        return jsonify({
+            'status': 'success',
+            'instances': obs_containers
+        })
+        
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        print(f"Error in list_instances: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to list instances: {str(e)}'
+        }), 500
 
 @app.route('/api/instances/create', methods=['POST'])
 def create_instance():
