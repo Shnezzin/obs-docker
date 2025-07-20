@@ -323,15 +323,18 @@ def api_instances():
         container_infos = []
         for idx, container in enumerate(all_containers):
             try:
-                # Unterscheide Wrapper (SubprocessContainerWrapper) und Dict
                 if hasattr(container, 'name'):
+                    # SubprocessContainerWrapper oder Docker-Objekt
                     container_name = container.name
                     container_id = getattr(container, 'id', '')[:12]
                     status = getattr(container, 'status', '')
-                    created = getattr(container, 'attrs', {}).get('Created', '')
-                    state = getattr(container, 'attrs', {}).get('State', {})
+                    attrs = getattr(container, 'attrs', {})
+                    created = attrs.get('Created', '')
+                    state = attrs.get('State', {})
                     container_labels = getattr(container, 'labels', {})
+                    ports_info = getattr(container, 'ports', {}) if hasattr(container, 'ports') else {}
                 else:
+                    # Dict
                     container_name = container.get('Names', ['unknown'])[0]
                     container_id = container.get('Id', '')[:12]
                     status = container.get('State', {}).get('Status', 'unknown')
@@ -340,6 +343,7 @@ def api_instances():
                     container_labels = container.get('Labels', {})
                     if isinstance(container_labels, str):
                         container_labels = parse_label_string(container_labels)
+                    ports_info = container.get('Ports', {})
                 # Uptime
                 uptime = 'N/A'
                 started_at = state.get('StartedAt')
@@ -350,7 +354,6 @@ def api_instances():
                     except (ValueError, TypeError):
                         pass
                 # Ports
-                ports_info = getattr(container, 'ports', {}) if hasattr(container, 'ports') else container.get('Ports', {})
                 ports = {}
                 if '3389/tcp' in ports_info and ports_info['3389/tcp']:
                     ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
