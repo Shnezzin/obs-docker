@@ -1871,6 +1871,28 @@ def fix_desktop_configuration(container_name):
         actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
         log_debug(f"Actual container name: {actual_container_name}")
         
+        # First, check and fix user existence
+        user_check = container.exec_run(
+            'getent passwd developer',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"User check: exit_code={user_check.exit_code}, output={user_check.output.decode()}")
+        
+        # Create user if it doesn't exist
+        if user_check.exit_code != 0:
+            create_user = container.exec_run(
+                'useradd -m -s /bin/bash -u 1000 -g 1000 developer',
+                user='root', debug_logs=debug_logs
+            )
+            log_debug(f"Create user: exit_code={create_user.exit_code}, output={create_user.output.decode()}")
+            
+            # Set password
+            set_pass = container.exec_run(
+                'echo "developer:obs123456789" | chpasswd',
+                user='root', debug_logs=debug_logs
+            )
+            log_debug(f"Set password: exit_code={set_pass.exit_code}")
+        
         # Fix .xsession for developer user
         xsession_result = container.exec_run(
             'echo "startlxde" > /home/developer/.xsession && chown developer:developer /home/developer/.xsession && chmod 644 /home/developer/.xsession',
@@ -1913,19 +1935,47 @@ def fix_desktop_configuration(container_name):
         )
         log_debug(f"Supervisor config check: exit_code={supervisor_check.exit_code}")
         
-        # Ensure supervisor is running and services are started
-        supervisor_start = container.exec_run(
-            'supervisord -c /etc/supervisor/xrdp.conf & sleep 2 && supervisorctl status',
+        # Kill existing supervisor processes
+        kill_supervisor = container.exec_run(
+            'pkill -f supervisord || true',
             user='root', debug_logs=debug_logs
         )
-        log_debug(f"Supervisor start: exit_code={supervisor_start.exit_code}, output={supervisor_start.output.decode()}")
+        log_debug(f"Kill supervisor: exit_code={kill_supervisor.exit_code}")
         
-        # Restart XRDP services
-        restart_result = container.exec_run(
-            'supervisorctl restart xrdp xrdp-sesman',
+        # Create necessary directories for XRDP
+        mkdir_xrdp = container.exec_run(
+            'mkdir -p /var/run/xrdp /var/run/xrdp/sockdir /var/log/xrdp',
             user='root', debug_logs=debug_logs
         )
-        log_debug(f"Restarted XRDP services: exit_code={restart_result.exit_code}, output={restart_result.output.decode()}")
+        log_debug(f"Create XRDP dirs: exit_code={mkdir_xrdp.exit_code}")
+        
+        # Set proper permissions for XRDP
+        chmod_xrdp = container.exec_run(
+            'chown -R xrdp:xrdp /var/run/xrdp /var/log/xrdp',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Set XRDP permissions: exit_code={chmod_xrdp.exit_code}")
+        
+        # Start supervisor properly
+        supervisor_start = container.exec_run(
+            'supervisord -c /etc/supervisor/xrdp.conf',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Supervisor start: exit_code={supervisor_start.exit_code}")
+        
+        # Wait for services to start
+        sleep_result = container.exec_run(
+            'sleep 5',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Wait for services: exit_code={sleep_result.exit_code}")
+        
+        # Check supervisor status
+        status_result = container.exec_run(
+            'supervisorctl status',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Supervisor status: exit_code={status_result.exit_code}, output={status_result.output.decode()}")
         
         # Check if services are running
         service_check = container.exec_run(
