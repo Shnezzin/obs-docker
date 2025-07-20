@@ -322,6 +322,8 @@ def api_instances():
         container_infos = []
         for idx, container in enumerate(all_containers):
             try:
+                debug_log(f"[DEBUG] Container raw object: {repr(container)}")
+                debug_log(f"[DEBUG] Container dir: {dir(container)}")
                 container_name = container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0]
                 container_labels = getattr(container, 'labels', {}) or {}
                 # Status und weitere Infos holen
@@ -373,7 +375,7 @@ def api_instances():
                 }
                 container_infos.append(container_info)
             except Exception as e:
-                print(f"Error processing container: {e}")
+                debug_log(f"[DEBUG] Error processing container: {e} (Typ: {type(e)})")
                 continue
         print(f"Returning {len(container_infos)} containers")
         # Rückgabe als Dict statt Liste
