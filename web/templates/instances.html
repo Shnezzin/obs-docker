@@ -262,7 +262,7 @@
                 <td>
                     ${instance.ports && instance.ports.vnc ? `<code>${instance.ports.vnc}</code>` : '<span class="text-muted">N/A</span>'}
                 </td>
-                <td>${instance.created || 'Unknown'}</td>
+                <td>${formatDateTime(instance.created) || 'Unknown'}</td>
                 <td>
                     <div class="btn-group" role="group">
                         ${instance.status === 'running' ? `
@@ -309,6 +309,16 @@
             case 'paused': return 'pause';
             default: return 'question';
         }
+    }
+
+    function formatDateTime(dateString) {
+        if (!dateString) return 'Unknown';
+        // Versuche ISO-String zu parsen
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return dateString;
+        // yyyy-mm-dd HH:MM:SS
+        const pad = n => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
     
     async function refreshInstances() {
