@@ -242,7 +242,7 @@ def containers():
 @app.route('/api/containers')
 def api_containers():
     """API endpoint for container information"""
-    return jsonify(obs_manager.containers)
+    return jsonify({'status': 'success', 'containers': obs_manager.containers})
 
 @app.route('/api/container/<container_name>/start', methods=['POST'])
 def start_container(container_name):

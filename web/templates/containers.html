@@ -466,10 +466,11 @@
     async function loadContainers() {
         try {
             const response = await fetch('/api/containers');
-            const containers = await response.json();
+            const result = await response.json();
+            const containers = result.containers || {};
             updateContainersTable(containers);
         } catch (error) {
-            console.error('Fehler beim Laden der Container:', error);
+            console.error('Error loading containers:', error);
         }
     }
 
@@ -487,7 +488,7 @@
         const host = window.location.hostname;
         const containerList = Object.values(containers);
         if (containerList.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">Keine Container gefunden.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No containers found.</td></tr>`;
             return;
         }
         containerList.forEach(container => {
