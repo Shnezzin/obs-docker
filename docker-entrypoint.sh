@@ -47,6 +47,17 @@ if ! getent passwd $USER >/dev/null 2>&1; then
     export HOME=/home/$USER
     if ! useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER; then
         log "WARNING: Failed to create user $USER (may already exist)"
+        # Check if user with UID 1000 exists but different name
+        EXISTING_USER=$(getent passwd $USER_ID | cut -d: -f1 2>/dev/null || echo "")
+        if [[ -n "$EXISTING_USER" && "$EXISTING_USER" != "$USER" ]]; then
+            log "WARNING: User with UID $USER_ID already exists as '$EXISTING_USER'"
+            # Rename existing user to our desired name
+            if usermod -l $USER $EXISTING_USER; then
+                log "Renamed user '$EXISTING_USER' to '$USER'"
+            else
+                log "WARNING: Could not rename user '$EXISTING_USER' to '$USER'"
+            fi
+        fi
     else
         log "Created user: $USER with home directory: $HOME"
     fi
@@ -75,17 +86,30 @@ if (( $# == 0 )); then
     # Setup user environment
     log "Setting up user environment"
     
+    # Check if user exists and get correct user info
+    if getent passwd ${USER} >/dev/null 2>&1; then
+        USER_UID=$(id -u ${USER} 2>/dev/null || echo "1000")
+        USER_GID=$(id -g ${USER} 2>/dev/null || echo "1000")
+        log "User ${USER} exists with UID: ${USER_UID}, GID: ${USER_GID}"
+    else
+        log "WARNING: User ${USER} does not exist, skipping environment setup"
+        USER_UID="1000"
+        USER_GID="1000"
+    fi
+    
     # Ensure .xsession exists and is correct
     if [[ ! -e ${HOME}/.xsession ]]; then
-        cp /etc/skel/.xsession ${HOME}/.xsession
+        cp /etc/skel/.xsession ${HOME}/.xsession 2>/dev/null || echo "startlxde" > ${HOME}/.xsession
     fi
     
     # Force correct .xsession content for LXDE
     echo "startlxde" > ${HOME}/.xsession
     
-    # Set proper permissions
-    chown ${USER}:${GROUP} ${HOME}/.xsession
-    chmod 644 ${HOME}/.xsession
+    # Set proper permissions (only if user exists)
+    if getent passwd ${USER} >/dev/null 2>&1; then
+        chown ${USER}:${GROUP} ${HOME}/.xsession 2>/dev/null || log "WARNING: Could not set ownership of .xsession"
+        chmod 644 ${HOME}/.xsession
+    fi
     
     # Create LXDE autostart directory
     mkdir -p ${HOME}/.config/lxsession/LXDE/
@@ -97,9 +121,11 @@ if (( $# == 0 )); then
 @xscreensaver -no-splash
 EOF
     
-    # Set proper permissions for autostart
-    chown -R ${USER}:${GROUP} ${HOME}/.config
-    chmod -R 755 ${HOME}/.config
+    # Set proper permissions for autostart (only if user exists)
+    if getent passwd ${USER} >/dev/null 2>&1; then
+        chown -R ${USER}:${GROUP} ${HOME}/.config 2>/dev/null || log "WARNING: Could not set ownership of .config"
+        chmod -R 755 ${HOME}/.config
+    fi
     
     # Generate RDP keys if needed
     log "Checking RDP keys"
