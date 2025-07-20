@@ -203,6 +203,33 @@ class DockerSubprocessClient:
         if result.returncode != 0:
             raise Exception(f"Container removal failed: {result.stderr}")
         return True
+        
+    def get_container(self, name):
+        """Get container by name or ID"""
+        # First try to get by name
+        result = subprocess.run(
+            ['docker', 'inspect', '--format', '{{json .}}', name],
+            capture_output=True, text=True, timeout=10
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            try:
+                container_info = json.loads(result.stdout)
+                if isinstance(container_info, list):
+                    container_info = container_info[0]  # Take first match if multiple
+                return container_info
+            except (json.JSONDecodeError, IndexError):
+                pass
+                
+        # If not found by name, try listing all containers and filter by name
+        containers = self.list_containers(all=True)
+        for container in containers:
+            if container.get('Names', '').lstrip('/') == name or container.get('ID', '').startswith(name):
+                # Get full container details
+                return self.get_container(container['ID'])
+                
+        # If we get here, container doesn't exist
+        return None
     
     def get_container_info(self, name):
         """Get detailed container information"""

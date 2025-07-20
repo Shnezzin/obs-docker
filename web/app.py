@@ -306,7 +306,7 @@ def instances():
 
 @app.route('/api/instances', methods=['GET'])
 def api_instances():
-    """Get all OBS instances"""
+    """Get all Docker containers (nicht nur OBS)"""
     try:
         if not docker_client:
             return jsonify({
@@ -316,71 +316,47 @@ def api_instances():
                 'count': 0
             }), 503
         
-        # Debug: List all containers to see what's available
+        # Alle Container auflisten
         all_containers = docker_client.containers.list(all=True)
         print(f"Found {len(all_containers)} containers total")
-        for idx, c in enumerate(all_containers):
-            print(f"Container {idx}: {c.name} (ID: {c.id[:12]}, Status: {c.status}, Labels: {c.labels}")
-        
-        # Filter for OBS containers - check both name and labels
-        obs_containers = []
-        for container in all_containers:
+        container_infos = []
+        for idx, container in enumerate(all_containers):
             try:
-                container_name = container.name.lower()
+                container_name = container.name if hasattr(container, 'name') else container.get('Names', ['unknown'])[0]
                 container_labels = getattr(container, 'labels', {}) or {}
-                
-                # Check if this is an OBS container by name or label
-                is_obs_container = (
-                    'obs' in container_name or
-                    'com.obs-docker.instance' in container_labels or
-                    any('obs' in k.lower() or 'obs' in str(v).lower() 
-                        for k, v in container_labels.items())
-                )
-                
-                if not is_obs_container:
-                    continue
-                    
-                print(f"Processing OBS container: {container_name}")
-                
-                # Get container status (handle both Python client and subprocess client)
+                # Status und weitere Infos holen
                 if hasattr(container, 'status'):
                     status = container.status
                     created = container.attrs.get('Created', '')
                     state = container.attrs.get('State', {})
                 else:
-                    # Handle subprocess client response (dictionary)
                     status = container.get('State', {}).get('Status', 'unknown')
                     created = container.get('Created', '')
                     state = container.get('State', {})
-                
-                # Format uptime
+                # Uptime
                 uptime = 'N/A'
                 started_at = state.get('StartedAt')
                 if started_at and started_at != '0001-01-01T00:00:00Z':
                     try:
                         started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
                         uptime = str(datetime.now(timezone.utc) - started_at).split('.')[0]
-                        print(f"Container {container_name} uptime: {uptime}")
-                    except (ValueError, TypeError) as e:
-                        print(f"Error parsing uptime for {container_name}: {e}")
-                
-                # Get ports
+                    except (ValueError, TypeError):
+                        pass
+                # Ports
                 ports_info = getattr(container, 'ports', {}) or {}
                 ports = {}
                 if '3389/tcp' in ports_info and ports_info['3389/tcp']:
                     ports['rdp'] = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
                 if '5900/tcp' in ports_info and ports_info['5900/tcp']:
                     ports['vnc'] = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
-                
-                # Get image name safely
+                # Image
                 image_name = 'unknown'
                 try:
                     if hasattr(container, 'image') and container.image:
                         if hasattr(container.image, 'tags') and container.image.tags:
                             image_name = container.image.tags[0]
-                except Exception as e:
-                    print(f"Error getting image name: {e}")
-                
+                except Exception:
+                    pass
                 container_info = {
                     'id': getattr(container, 'id', '')[:12],
                     'name': container_name,
@@ -391,19 +367,15 @@ def api_instances():
                     'ports': ports,
                     'labels': container_labels
                 }
-                print(f"Added container info: {container_info}")
-                obs_containers.append(container_info)
-                
+                container_infos.append(container_info)
             except Exception as e:
                 print(f"Error processing container: {e}")
                 continue
-        
-        print(f"Returning {len(obs_containers)} OBS containers")
+        print(f"Returning {len(container_infos)} containers")
         return jsonify({
             'status': 'success',
-            'instances': obs_containers
+            'instances': container_infos
         })
-        
     except Exception as e:
         print(f"Error in list_instances: {str(e)}")
         return jsonify({
@@ -444,13 +416,45 @@ def create_instance():
             
             # Check if container already exists
             try:
-                existing_container = docker_client.get_container(container_name)
+                existing_container = None
+                try:
+                    # First try to get by exact name
+                    existing_container = docker_client.get_container(container_name)
+                    
+                    # If we get here, container exists - check if it's actually running
+                    if isinstance(existing_container, dict):  # Subprocess client
+                        if existing_container.get('State', {}).get('Status') not in ['removing', 'dead']:
+                            return jsonify({
+                                'status': 'error', 
+                                'message': f'Instance "{name}" already exists and is {existing_container.get("State", {}).get("Status", "unknown")}'
+                            }), 409
+                    else:  # Python Docker client
+                        existing_container.reload()  # Refresh container state
+                        if existing_container.status not in ['removing', 'dead']:
+                            return jsonify({
+                                'status': 'error', 
+                                'message': f'Instance "{name}" already exists and is {existing_container.status}'
+                            }), 409
+                    
+                    # If we get here, container exists but is being removed or is dead
+                    print(f"Container {container_name} exists but is being removed or dead, will recreate")
+                    
+                except Exception as e:
+                    # Check if the error is because container doesn't exist
+                    if 'No such container' in str(e) or '404' in str(e):
+                        print(f"Container {container_name} does not exist, will create new one")
+                    else:
+                        print(f"Error checking for existing container {container_name}: {e}")
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'Error checking for existing instance: {str(e)}'
+                        }), 500
+            except Exception as e:
+                print(f"Error checking for existing container {container_name}: {e}")
                 return jsonify({
-                    'status': 'error', 
-                    'message': f'Instance "{name}" already exists'
-                }), 409
-            except Exception:
-                pass  # Container doesn't exist, we can create it
+                    'status': 'error',
+                    'message': f'Error checking for existing instance: {str(e)}'
+                }), 500
             
             # Create and start the container
             container = docker_client.create_container(
