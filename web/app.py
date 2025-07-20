@@ -488,51 +488,56 @@ def parse_label_string(label_str):
     pairs = [kv.split('=', 1) for kv in label_str.split(',') if '=' in kv]
     return {k.strip(): v.strip() for k, v in pairs}
 
-def ensure_user_exists(container_name, user, password):
+def ensure_user_exists(container_name, user, password, debug_logs=None):
     """Ensure the specified user exists in the container"""
+    def log_debug(message):
+        if debug_logs is not None:
+            debug_logs.append(f"ensure_user: {message}")
+        print(f"[DEBUG] ensure_user: {message}")
+    
     try:
-        print(f"[DEBUG] ensure_user_exists called for container {container_name}, user {user}")
+        log_debug(f"called for container {container_name}, user {user}")
         if not docker_adapter:
-            print("[DEBUG] docker_adapter not available")
+            log_debug("docker_adapter not available")
             return False
         
         container = docker_adapter.containers.get(container_name)
         if not container:
-            print(f"[DEBUG] Container {container_name} not found")
+            log_debug(f"Container {container_name} not found")
             return False
         
         # Check if container is running
         container_info = container.attrs if hasattr(container, 'attrs') else container
         if isinstance(container_info, dict) and container_info.get('State', {}).get('Status') != 'running':
-            print(f"[DEBUG] Container {container_name} is not running (status: {container_info.get('State', {}).get('Status')})")
+            log_debug(f"Container {container_name} is not running (status: {container_info.get('State', {}).get('Status')})")
             return False
         
-        print(f"[DEBUG] Container {container_name} found and running, checking if user {user} exists")
+        log_debug(f"Container {container_name} found and running, checking if user {user} exists")
         
         # Check if user exists
         result = container.exec_run(f'id {user}', user='root')
-        print(f"[DEBUG] User check result: exit_code={result.exit_code}, output={result.output.decode()}")
+        log_debug(f"User check result: exit_code={result.exit_code}, output={result.output.decode()}")
         if result.exit_code == 0:
-            print(f"User {user} already exists in container {container_name}")
+            log_debug(f"User {user} already exists in container {container_name}")
             return True
         
         # Create user if it doesn't exist
-        print(f"Creating user {user} in container {container_name}")
+        log_debug(f"Creating user {user} in container {container_name}")
         
         # Create group first
         group_result = container.exec_run(f'groupadd -g 1000 {user}', user='root')
-        print(f"[DEBUG] Group creation result: exit_code={group_result.exit_code}, output={group_result.output.decode()}")
+        log_debug(f"Group creation result: exit_code={group_result.exit_code}, output={group_result.output.decode()}")
         if group_result.exit_code != 0 and 'already exists' not in group_result.output.decode():
-            print(f"Warning: Failed to create group {user}: {group_result.output.decode()}")
+            log_debug(f"Warning: Failed to create group {user}: {group_result.output.decode()}")
         
         # Create user
         user_result = container.exec_run(
             f'useradd -d /home/{user} -m -s /bin/bash -u 1000 -g 1000 {user}', 
             user='root'
         )
-        print(f"[DEBUG] User creation result: exit_code={user_result.exit_code}, output={user_result.output.decode()}")
+        log_debug(f"User creation result: exit_code={user_result.exit_code}, output={user_result.output.decode()}")
         if user_result.exit_code != 0:
-            print(f"Error creating user {user}: {user_result.output.decode()}")
+            log_debug(f"Error creating user {user}: {user_result.output.decode()}")
             return False
         
         # Set password
@@ -540,16 +545,16 @@ def ensure_user_exists(container_name, user, password):
             f'echo "{user}:{password}" | chpasswd', 
             user='root'
         )
-        print(f"[DEBUG] Password setting result: exit_code={passwd_result.exit_code}, output={passwd_result.output.decode()}")
+        log_debug(f"Password setting result: exit_code={passwd_result.exit_code}, output={passwd_result.output.decode()}")
         if passwd_result.exit_code != 0:
-            print(f"Error setting password for {user}: {passwd_result.output.decode()}")
+            log_debug(f"Error setting password for {user}: {passwd_result.output.decode()}")
             return False
         
-        print(f"Successfully created user {user} in container {container_name}")
+        log_debug(f"Successfully created user {user} in container {container_name}")
         return True
         
     except Exception as e:
-        print(f"Error ensuring user exists: {e}")
+        log_debug(f"Error ensuring user exists: {e}")
         return False
 
 @app.route('/api/instances/create', methods=['POST'])
@@ -742,40 +747,45 @@ def create_instance():
 def get_container_name(instance_name):
     return instance_name if instance_name.startswith('obs-') else f'obs-{instance_name}'
 
-def find_container_by_name_or_instance(name_or_instance):
+def find_container_by_name_or_instance(name_or_instance, debug_logs=None):
     """Find container by name or instance name"""
-    print(f"[DEBUG] find_container_by_name_or_instance called with: {name_or_instance}")
+    def log_debug(message):
+        if debug_logs is not None:
+            debug_logs.append(f"find_container: {message}")
+        print(f"[DEBUG] find_container: {message}")
+    
+    log_debug(f"called with: {name_or_instance}")
     
     if not docker_adapter:
-        print("[DEBUG] docker_adapter not available")
+        log_debug("docker_adapter not available")
         return None
     
     # Try direct container name first
     try:
-        print(f"[DEBUG] Trying direct container name: {name_or_instance}")
+        log_debug(f"Trying direct container name: {name_or_instance}")
         container = docker_adapter.containers.get(name_or_instance)
         if container:
-            print(f"[DEBUG] Found container by direct name: {container}")
+            log_debug(f"Found container by direct name: {container}")
             return container
     except Exception as e:
-        print(f"[DEBUG] Direct container name failed: {e}")
+        log_debug(f"Direct container name failed: {e}")
     
     # Try as instance name (add obs- prefix)
     container_name = get_container_name(name_or_instance)
     try:
-        print(f"[DEBUG] Trying as instance name: {container_name}")
+        log_debug(f"Trying as instance name: {container_name}")
         container = docker_adapter.containers.get(container_name)
         if container:
-            print(f"[DEBUG] Found container by instance name: {container}")
+            log_debug(f"Found container by instance name: {container}")
             return container
     except Exception as e:
-        print(f"[DEBUG] Instance name failed: {e}")
+        log_debug(f"Instance name failed: {e}")
     
     # Try to find by instance label
     try:
-        print(f"[DEBUG] Trying to find by instance label: {name_or_instance}")
+        log_debug(f"Trying to find by instance label: {name_or_instance}")
         all_containers = docker_adapter.containers.list(all=True)
-        print(f"[DEBUG] Found {len(all_containers)} containers total")
+        log_debug(f"Found {len(all_containers)} containers total")
         
         for container in all_containers:
             if hasattr(container, 'labels'):
@@ -783,14 +793,14 @@ def find_container_by_name_or_instance(name_or_instance):
             else:
                 labels = container.get('Labels', {})
             
-            print(f"[DEBUG] Container labels: {labels}")
+            log_debug(f"Container labels: {labels}")
             if labels.get('com.obs-docker.instance') == name_or_instance:
-                print(f"[DEBUG] Found container by label: {container}")
+                log_debug(f"Found container by label: {container}")
                 return container
     except Exception as e:
-        print(f"[DEBUG] Label search failed: {e}")
+        log_debug(f"Label search failed: {e}")
     
-    print(f"[DEBUG] Container not found: {name_or_instance}")
+    log_debug(f"Container not found: {name_or_instance}")
     return None
 
 @app.route('/api/instances/<instance_name>/start', methods=['POST'])
@@ -1755,46 +1765,53 @@ def handle_stats_request():
 @app.route('/api/container/<container_name>/create-user', methods=['POST'])
 def create_user_in_container(container_name):
     """Create user in existing container"""
+    debug_logs = []
+    
+    def log_debug(message):
+        debug_logs.append(message)
+        print(f"[DEBUG] {message}")
+    
     try:
-        print(f"[DEBUG] create_user_in_container called with container_name: {container_name}")
+        log_debug(f"create_user_in_container called with container_name: {container_name}")
         data = request.json or {}
         user = data.get('user', 'developer')
         password = data.get('password', 'obs123')
         
-        print(f"[DEBUG] User: {user}, Password: {password}")
+        log_debug(f"User: {user}, Password: {password}")
         
         if not docker_adapter:
-            print("[DEBUG] docker_adapter not available")
-            return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+            log_debug("docker_adapter not available")
+            return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
         
-        print(f"[DEBUG] docker_adapter available, searching for container: {container_name}")
+        log_debug(f"docker_adapter available, searching for container: {container_name}")
         
         # Find container by name or instance name
-        container = find_container_by_name_or_instance(container_name)
+        container = find_container_by_name_or_instance(container_name, debug_logs)
         if container is None:
-            print(f"[DEBUG] Container {container_name} not found")
-            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found'}), 404
+            log_debug(f"Container {container_name} not found")
+            return jsonify({'status': 'error', 'message': f'Container "{container_name}" not found', 'debug': debug_logs}), 404
         
-        print(f"[DEBUG] Container found: {container}")
+        log_debug(f"Container found: {container}")
         
         # Get actual container name for user creation
         actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
-        print(f"[DEBUG] Actual container name: {actual_container_name}")
+        log_debug(f"Actual container name: {actual_container_name}")
         
-        print(f"[DEBUG] Calling ensure_user_exists with: {actual_container_name}, {user}, {password}")
-        if ensure_user_exists(actual_container_name, user, password):
-            print(f"[DEBUG] User creation successful")
+        log_debug(f"Calling ensure_user_exists with: {actual_container_name}, {user}, {password}")
+        if ensure_user_exists(actual_container_name, user, password, debug_logs):
+            log_debug("User creation successful")
             return jsonify({
                 'status': 'success', 
-                'message': f'User {user} created successfully in container {container_name}'
+                'message': f'User {user} created successfully in container {container_name}',
+                'debug': debug_logs
             })
         else:
-            print(f"[DEBUG] User creation failed")
-            return jsonify({'status': 'error', 'message': f'Failed to create user {user} in container {container_name}'}), 500
+            log_debug("User creation failed")
+            return jsonify({'status': 'error', 'message': f'Failed to create user {user} in container {container_name}', 'debug': debug_logs}), 500
             
     except Exception as e:
-        print(f"[DEBUG] Exception in create_user_in_container: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        log_debug(f"Exception in create_user_in_container: {e}")
+        return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
 
 if __name__ == '__main__':
     # Ensure required directories exist
