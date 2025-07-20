@@ -7,6 +7,8 @@ Provides unified interface for both Python Docker library and subprocess client
 import subprocess
 import docker
 from docker_subprocess_client import DockerSubprocessClient
+import json
+import time
 
 class DockerAdapter:
     """Unified Docker client adapter"""
@@ -274,6 +276,106 @@ class SubprocessContainerWrapper:
                 return f"Error getting logs: {result.stderr}".encode('utf-8')
         except Exception as e:
             return f"Error getting logs: {str(e)}".encode('utf-8')
+    
+    def stats(self, stream=False):
+        """Get container statistics"""
+        cmd = ['docker', 'stats', '--no-stream', '--format', 'json', self._name]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse the JSON output from docker stats
+                stats_data = json.loads(result.stdout.strip())
+                
+                # Convert to the format expected by the Python Docker SDK
+                # docker stats returns: {"CPUPerc":"0.00%","MemUsage":"1.5MiB / 1.944GiB",...}
+                # We need to convert this to the format that calculate_cpu_percent expects
+                
+                # Parse CPU percentage
+                cpu_perc = stats_data.get('CPUPerc', '0%').replace('%', '')
+                try:
+                    cpu_percent = float(cpu_perc)
+                except:
+                    cpu_percent = 0.0
+                
+                # Parse memory usage
+                mem_usage_str = stats_data.get('MemUsage', '0B / 0B')
+                mem_parts = mem_usage_str.split(' / ')
+                if len(mem_parts) == 2:
+                    try:
+                        # Convert memory strings to bytes
+                        mem_usage = self._parse_memory_string(mem_parts[0])
+                        mem_limit = self._parse_memory_string(mem_parts[1])
+                    except:
+                        mem_usage = 0
+                        mem_limit = 0
+                else:
+                    mem_usage = 0
+                    mem_limit = 0
+                
+                # Create a mock stats structure that matches Python Docker SDK format
+                # This is a simplified version - for full CPU calculation we'd need more data
+                mock_stats = {
+                    'cpu_stats': {
+                        'cpu_usage': {
+                            'total_usage': int(cpu_percent * 1000000),  # Mock value
+                            'percpu_usage': [int(cpu_percent * 1000000)]  # Mock value
+                        },
+                        'system_cpu_usage': int(time.time() * 1000000000)  # Mock value
+                    },
+                    'precpu_stats': {
+                        'cpu_usage': {
+                            'total_usage': 0,  # Mock value
+                        },
+                        'system_cpu_usage': 0  # Mock value
+                    },
+                    'memory_stats': {
+                        'usage': mem_usage,
+                        'limit': mem_limit
+                    }
+                }
+                
+                return mock_stats
+            else:
+                # Return empty stats if container not running or error
+                return {
+                    'cpu_stats': {'cpu_usage': {'total_usage': 0, 'percpu_usage': [0]}, 'system_cpu_usage': 0},
+                    'precpu_stats': {'cpu_usage': {'total_usage': 0}, 'system_cpu_usage': 0},
+                    'memory_stats': {'usage': 0, 'limit': 0}
+                }
+        except Exception as e:
+            # Return empty stats on error
+            return {
+                'cpu_stats': {'cpu_usage': {'total_usage': 0, 'percpu_usage': [0]}, 'system_cpu_usage': 0},
+                'precpu_stats': {'cpu_usage': {'total_usage': 0}, 'system_cpu_usage': 0},
+                'memory_stats': {'usage': 0, 'limit': 0}
+            }
+    
+    def _parse_memory_string(self, mem_str):
+        """Parse memory string like '1.5MiB' to bytes"""
+        import re
+        mem_str = mem_str.strip()
+        
+        # Handle different units
+        units = {
+            'B': 1,
+            'KB': 1024,
+            'MB': 1024**2,
+            'GB': 1024**3,
+            'KiB': 1024,
+            'MiB': 1024**2,
+            'GiB': 1024**3
+        }
+        
+        # Extract number and unit
+        match = re.match(r'([\d.]+)\s*([A-Za-z]+)', mem_str)
+        if match:
+            number = float(match.group(1))
+            unit = match.group(2)
+            if unit in units:
+                return int(number * units[unit])
+        
+        return 0
 
 # Global adapter instance
 docker_adapter = DockerAdapter()

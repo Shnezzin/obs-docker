@@ -150,8 +150,8 @@ class OBSManager:
             }
             
             # Container stats (only if Docker client is available)
-            if docker_client:
-                containers = docker_client.containers.list(all=True)
+            if docker_adapter:
+                containers = docker_adapter.containers.list(all=True)
                 self.containers = {}
                 
                 for container in containers:
@@ -296,10 +296,10 @@ def api_containers():
 @app.route('/api/container/<container_name>/start', methods=['POST'])
 def start_container(container_name):
     """Start a container"""
-    if not docker_client:
+    if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_client.containers.get(container_name)
+        container = docker_adapter.containers.get(container_name)
         container.start()
         return jsonify({'status': 'success', 'message': f'Container {container_name} started'})
     except Exception as e:
@@ -308,10 +308,10 @@ def start_container(container_name):
 @app.route('/api/container/<container_name>/stop', methods=['POST'])
 def stop_container(container_name):
     """Stop a container"""
-    if not docker_client:
+    if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_client.containers.get(container_name)
+        container = docker_adapter.containers.get(container_name)
         container.stop()
         return jsonify({'status': 'success', 'message': f'Container {container_name} stopped'})
     except Exception as e:
@@ -320,10 +320,10 @@ def stop_container(container_name):
 @app.route('/api/container/<container_name>/restart', methods=['POST'])
 def restart_container(container_name):
     """Restart a container"""
-    if not docker_client:
+    if not docker_adapter:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
-        container = docker_client.containers.get(container_name)
+        container = docker_adapter.containers.get(container_name)
         container.restart()
         return jsonify({'status': 'success', 'message': f'Container {container_name} restarted'})
     except Exception as e:
