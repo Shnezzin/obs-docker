@@ -324,7 +324,6 @@ def api_instances():
         for idx, container in enumerate(all_containers):
             try:
                 if hasattr(container, 'name'):
-                    debug_log(f"[DEBUG] SubprocessContainerWrapper: name={getattr(container, 'name', None)}, id={getattr(container, 'id', None)}, labels={getattr(container, 'labels', None)}, attrs={getattr(container, 'attrs', None)}")
                     container_name = container.name
                     container_id = getattr(container, 'id', '')[:12]
                     status = getattr(container, 'status', '')
@@ -334,7 +333,6 @@ def api_instances():
                     container_labels = getattr(container, 'labels', {})
                     ports_info = getattr(container, 'ports', {}) if hasattr(container, 'ports') else {}
                 else:
-                    debug_log(f"[DEBUG] Dict container: {container}")
                     container_name = container.get('Names', ['unknown'])[0]
                     container_id = container.get('Id', '')[:12]
                     status = container.get('State', {}).get('Status', 'unknown')
@@ -386,7 +384,8 @@ def api_instances():
             except Exception as e:
                 debug_log(f"[DEBUG] Error processing container: {e} (Typ: {type(e)})")
                 continue
-        print(f"Returning {len(container_infos)} containers")
+        debug_log(f"[DEBUG] container_infos: {container_infos}")
+        debug_log(f"[DEBUG] instance dict: {[c['name'] for c in container_infos]}")
         # Rückgabe als Dict statt Liste
         return jsonify({
             'status': 'success',
