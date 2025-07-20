@@ -435,17 +435,28 @@ def create_instance():
                 }
             )
             
-            # Get container info
-            container.reload()
-            ports_info = container.attrs['NetworkSettings']['Ports']
+            # Get container info (handle both Python client and subprocess client)
+            if hasattr(container, 'reload'):
+                container.reload()  # Python Docker client
+                ports_info = container.attrs['NetworkSettings']['Ports']
+                container_id = container.id[:12]
+            else:
+                # Subprocess client already returns container info
+                ports_info = container.get('NetworkSettings', {}).get('Ports', {})
+                container_id = container.get('Id', '')[:12]
             
-            # Extract assigned ports
-            rdp_port = ports_info.get('3389/tcp', [{}])[0].get('HostPort', 'N/A')
-            vnc_port = ports_info.get('5900/tcp', [{}])[0].get('HostPort', 'N/A')
+            # Extract assigned ports (handle both client types)
+            rdp_port = 'N/A'
+            vnc_port = 'N/A'
+            
+            if '3389/tcp' in ports_info and ports_info['3389/tcp']:
+                rdp_port = ports_info['3389/tcp'][0].get('HostPort', 'N/A')
+            if '5900/tcp' in ports_info and ports_info['5900/tcp']:
+                vnc_port = ports_info['5900/tcp'][0].get('HostPort', 'N/A')
             
             instance_data = {
                 'name': name,
-                'container_id': container.id[:12],
+                'container_id': container_id,
                 'container_name': container_name,
                 'template': template,
                 'user': user,
