@@ -164,20 +164,6 @@
     <!-- Toast container for notifications -->
     <div class="toast-container"></div>
 
-    <!-- Loading modal -->
-    <div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-sm modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-body text-center">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2 mb-0">Processing...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
@@ -210,51 +196,13 @@
         }
         
         function showLoading() {
-            try {
-                const loadingElement = document.getElementById('loadingModal');
-                if (loadingElement) {
-                    const modal = new bootstrap.Modal(loadingElement);
-                    modal.show();
-                    console.log('Loading modal shown');
-                } else {
-                    console.warn('Loading modal element not found');
-                }
-            } catch (error) {
-                console.error('Error showing loading modal:', error);
-            }
+            // Loading modal disabled for better UX
+            console.log('Loading started (modal disabled)');
         }
         
         function hideLoading() {
-            try {
-                const loadingElement = document.getElementById('loadingModal');
-                if (loadingElement) {
-                    const modal = bootstrap.Modal.getInstance(loadingElement);
-                    if (modal) {
-                        modal.hide();
-                        console.log('Loading modal hidden');
-                    } else {
-                        // Force hide if modal instance doesn't exist
-                        loadingElement.style.display = 'none';
-                        loadingElement.classList.remove('show');
-                        document.body.classList.remove('modal-open');
-                        const backdrop = document.querySelector('.modal-backdrop');
-                        if (backdrop) backdrop.remove();
-                        console.log('Loading modal force hidden');
-                    }
-                } else {
-                    console.warn('Loading modal element not found for hiding');
-                }
-            } catch (error) {
-                console.error('Error hiding loading modal:', error);
-                // Force cleanup on error
-                try {
-                    document.body.classList.remove('modal-open');
-                    const backdrop = document.querySelector('.modal-backdrop');
-                    if (backdrop) backdrop.remove();
-                } catch (e) {
-                    console.error('Error in force cleanup:', e);
-                }
-            }
+            // Loading modal disabled for better UX
+            console.log('Loading finished (modal disabled)');
         }
         
         function refreshData() {
@@ -263,11 +211,7 @@
         
         // API helper functions
         async function apiCall(url, options = {}) {
-            let loadingShown = false;
             try {
-                showLoading();
-                loadingShown = true;
-                
                 console.log(`API Call: ${url}`, options);
                 
                 const response = await fetch(url, {
@@ -294,10 +238,6 @@
                 console.error('API Call Error:', error);
                 showToast(`API Error: ${error.message}`, 'danger');
                 throw error;
-            } finally {
-                if (loadingShown) {
-                    hideLoading();
-                }
             }
         }
         
