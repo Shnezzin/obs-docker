@@ -99,25 +99,41 @@ class DockerAdapter:
         
         if self.client_type == 'python':
             return self.client.containers.get(name)
-        elif self.client_type == 'subprocess':
-            if self.client.container_exists(name):
-                return SubprocessContainerWrapper(self.client, name)
-            else:
-                raise docker.errors.NotFound(f"Container {name} not found")
+        else:
+            return SubprocessContainerWrapper(self.client, name)
     
     def list_containers(self, all=False):
-        """List containers"""
+        """List containers with unified interface"""
         if not self.client:
-            return []
+            raise Exception("No Docker client available")
         
         if self.client_type == 'python':
             return self.client.containers.list(all=all)
-        elif self.client_type == 'subprocess':
-            containers = self.client.list_containers(all=all)
-            return [SubprocessContainerWrapper(self.client, c.get('Names', '')) for c in containers]
         else:
-            return []
-
+            # For subprocess client, return a list of container wrappers
+            container_data = self.client.list_containers(all=all)
+            return [SubprocessContainerWrapper(self.client, c['Names'][0].lstrip('/')) 
+                   for c in container_data if c.get('Names')]
+    
+    # Add containers property for backward compatibility
+    @property
+    def containers(self):
+        """Containers property for backward compatibility"""
+        if not self.client:
+            raise Exception("No Docker client available")
+            
+        class ContainersNamespace:
+            def __init__(self, adapter):
+                self.adapter = adapter
+                
+            def list(self, **kwargs):
+                return self.adapter.list_containers(all=kwargs.get('all', False))
+                
+            def get(self, container_id):
+                return self.adapter.get_container(container_id)
+                
+        return ContainersNamespace(self)
+    
 class SubprocessContainerWrapper:
     """Wrapper to make subprocess container behave like Python Docker library container"""
     
