@@ -1906,12 +1906,33 @@ def fix_desktop_configuration(container_name):
         )
         log_debug(f"Fixed XRDP config: exit_code={xrdp_config_result.exit_code}")
         
+        # Check and fix supervisor configuration
+        supervisor_check = container.exec_run(
+            'cat /etc/supervisor/xrdp.conf',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Supervisor config check: exit_code={supervisor_check.exit_code}")
+        
+        # Ensure supervisor is running and services are started
+        supervisor_start = container.exec_run(
+            'supervisord -c /etc/supervisor/xrdp.conf & sleep 2 && supervisorctl status',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Supervisor start: exit_code={supervisor_start.exit_code}, output={supervisor_start.output.decode()}")
+        
         # Restart XRDP services
         restart_result = container.exec_run(
             'supervisorctl restart xrdp xrdp-sesman',
             user='root', debug_logs=debug_logs
         )
         log_debug(f"Restarted XRDP services: exit_code={restart_result.exit_code}, output={restart_result.output.decode()}")
+        
+        # Check if services are running
+        service_check = container.exec_run(
+            'pgrep -f "xrdp\|xrdp-sesman"',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Service check: exit_code={service_check.exit_code}, output={service_check.output.decode()}")
         
         return jsonify({
             'status': 'success',
