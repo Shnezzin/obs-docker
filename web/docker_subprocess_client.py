@@ -71,45 +71,20 @@ class DockerSubprocessClient:
     
     def list_containers(self, all=False):
         """List containers"""
-        # Try JSON format first
-        cmd = ['docker', 'ps', '--format', 'json']
+        # Verwende ausschließlich das Fallback-Parsing mit --format '{{json .}}'
+        cmd = ['docker', 'ps', '--format', '{{json .}}']
         if all:
             cmd.append('-a')
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0 and result.stdout.strip():
-            containers = []
-            for line in result.stdout.strip().split('\n'):
-                if line.strip():
-                    try:
-                        containers.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-            if containers:  # If we got valid JSON, return it
-                return containers
-        
-        # Fallback to table format parsing
-        cmd = ['docker', 'ps', '--format', 'table {{.Names}}\t{{.Status}}\t{{.Image}}\t{{.ID}}']
-        if all:
-            cmd.append('-a')
-        
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             return []
-        
         containers = []
-        lines = result.stdout.strip().split('\n')
-        if len(lines) > 1:  # Skip header line
-            for line in lines[1:]:
-                if line.strip():
-                    parts = line.split('\t')
-                    if len(parts) >= 4:
-                        containers.append({
-                            'Names': parts[0].strip(),
-                            'Status': parts[1].strip(),
-                            'Image': parts[2].strip(),
-                            'ID': parts[3].strip()
-                        })
+        for line in result.stdout.strip().split('\n'):
+            if line.strip():
+                try:
+                    containers.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
         return containers
     
     def create_container(self, image, name, ports=None, environment=None, volumes=None, network=None, labels=None):
