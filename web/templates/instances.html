@@ -28,6 +28,7 @@
                                 <th>Template</th>
                                 <th>User</th>
                                 <th>RDP Port</th>
+                                <th>VNC Port</th>
                                 <th>Created</th>
                                 <th>Actions</th>
                             </tr>
@@ -225,19 +226,23 @@
     function updateInstancesTable() {
         const tbody = document.getElementById('instancesTableBody');
         tbody.innerHTML = '';
-        
-        if (Object.keys(instances).length === 0) {
+
+        const host = window.location.hostname;
+
+        const filteredInstances = Object.entries(instances).filter(([name, instance]) => name !== 'obs-web-manager');
+
+        if (filteredInstances.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="text-center text-muted">
+                    <td colspan="8" class="text-center text-muted">
                         <i class="fas fa-info-circle"></i> No instances found. Create your first instance to get started.
                     </td>
                 </tr>
             `;
             return;
         }
-        
-        Object.entries(instances).forEach(([name, instance]) => {
+
+        filteredInstances.forEach(([name, instance]) => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td><strong>${name}</strong></td>
@@ -254,6 +259,9 @@
                 <td>
                     ${instance.rdp_port ? `<code>${instance.rdp_port}</code>` : '<span class="text-muted">N/A</span>'}
                 </td>
+                <td>
+                    ${instance.ports && instance.ports.vnc ? `<code>${instance.ports.vnc}</code>` : '<span class="text-muted">N/A</span>'}
+                </td>
                 <td>${instance.created || 'Unknown'}</td>
                 <td>
                     <div class="btn-group" role="group">
@@ -269,8 +277,11 @@
                                 <i class="fas fa-play"></i>
                             </button>
                         `}
-                        <button class="btn btn-sm btn-primary" onclick="connectInstance('${name}')" title="Connect">
+                        <button class="btn btn-sm btn-primary" onclick="connectInstanceRDP('${name}')" title="Connect RDP">
                             <i class="fas fa-desktop"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary" onclick="connectInstanceVNC('${name}')" title="Connect VNC">
+                            <i class="fas fa-network-wired"></i>
                         </button>
                         <button class="btn btn-sm btn-danger" onclick="removeInstance('${name}')" title="Remove">
                             <i class="fas fa-trash"></i>
@@ -384,11 +395,12 @@
         }
     }
     
-    function connectInstance(name) {
+    function connectInstanceRDP(name) {
         const instance = instances[name];
         if (instance && instance.rdp_port) {
-            const rdpUrl = `rdp://localhost:${instance.rdp_port}`;
-            showToast(`RDP connection: localhost:${instance.rdp_port}`, 'info');
+            const host = window.location.hostname;
+            const rdpUrl = `rdp://${host}:${instance.rdp_port}`;
+            showToast(`RDP connection: ${host}:${instance.rdp_port}`, 'info');
             
             try {
                 window.open(rdpUrl);
@@ -397,6 +409,22 @@
             }
         } else {
             showToast('No RDP port available for this instance', 'warning');
+        }
+    }
+
+    function connectInstanceVNC(name) {
+        const instance = instances[name];
+        if (instance && instance.ports && instance.ports.vnc) {
+            const host = window.location.hostname;
+            const vncUrl = `vnc://${host}:${instance.ports.vnc}`;
+            showToast(`VNC connection: ${host}:${instance.ports.vnc}`, 'info');
+            try {
+                window.open(vncUrl);
+            } catch (e) {
+                console.log('Could not auto-open VNC client');
+            }
+        } else {
+            showToast('No VNC port available for this instance', 'warning');
         }
     }
     
