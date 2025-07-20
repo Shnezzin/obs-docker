@@ -155,8 +155,6 @@ class OBSManager:
                 self.containers = {}
                 
                 for container in containers:
-                    print('[DEBUG] update_stats: container type:', type(container))
-                    print('[DEBUG] update_stats: container dir:', dir(container))
                     # Robust extraction for both wrapper and dict
                     if hasattr(container, 'status'):
                         status = container.status
@@ -172,7 +170,6 @@ class OBSManager:
                         created = container.get('Created', '')
                         state = container.get('State', {})
                     else:
-                        print('[DEBUG] Unknown container type:', type(container))
                         continue
                     # Format uptime
                     uptime = 'N/A'
@@ -233,7 +230,6 @@ class OBSManager:
                         'ports': ports,
                         'labels': labels,
                     }
-                    print('[DEBUG] update_stats: stats:', stats)
                     # Get container stats if running
                     if status == 'running' and hasattr(container, 'stats'):
                         try:
@@ -242,7 +238,7 @@ class OBSManager:
                             stats['memory_usage'] = container_stats['memory_stats'].get('usage', 0)
                             stats['memory_limit'] = container_stats['memory_stats'].get('limit', 0)
                         except Exception as e:
-                            print('[DEBUG] update_stats: error getting stats:', e)
+                            pass
                     self.containers[name] = stats
             else:
                 # Standalone mode - no container stats
@@ -1021,10 +1017,18 @@ def system_info():
         import platform
         import sys
         import shutil
-        
+        print('[DEBUG] platform.system:', platform.system())
+        print('[DEBUG] platform.release:', platform.release())
+        print('[DEBUG] platform.version:', platform.version())
+        print('[DEBUG] platform.machine:', platform.machine())
+        print('[DEBUG] platform.processor:', platform.processor())
+        print('[DEBUG] platform.architecture:', platform.architecture())
+        print('[DEBUG] psutil.cpu_count:', psutil.cpu_count())
+        print('[DEBUG] sys.version:', sys.version)
+        print('[DEBUG] sys.executable:', sys.executable)
         # Get memory info
         memory = psutil.virtual_memory()
-        
+        print('[DEBUG] psutil.virtual_memory:', memory)
         # Get disk info (try multiple paths for cross-platform compatibility)
         disk_total = 0
         disk_free = 0
@@ -1035,18 +1039,20 @@ def system_info():
                 disk_usage = psutil.disk_usage('C:\\' if platform.system() == 'Windows' else '.')
             disk_total = disk_usage.total
             disk_free = disk_usage.free
-        except:
+        except Exception as e:
+            print('[DEBUG] disk usage error:', e)
             disk_total = 0
             disk_free = 0
-        
         # Get Docker version safely
         docker_version = 'Not available'
         if docker_client:
             try:
-                docker_version = docker_client.version()['Version']
-            except:
+                version_info = docker_client.version()
+                print('[DEBUG] docker_client.version:', version_info)
+                docker_version = version_info['Version']
+            except Exception as e:
+                print('[DEBUG] docker_client.version() error:', e)
                 docker_version = 'Connected but version unavailable'
-        
         system_info = {
             'platform': {
                 'system': platform.system() or 'Unknown',
@@ -1094,7 +1100,7 @@ def system_info():
                 'hostname': platform.node() or 'Unknown'
             }
         }
-        
+        print('[DEBUG] system_info response:', system_info)
         return jsonify(system_info)
     except Exception as e:
         print(f"System info error: {e}")
