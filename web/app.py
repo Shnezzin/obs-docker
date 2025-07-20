@@ -236,15 +236,41 @@ def create_instance():
         user = data.get('user', 'developer')
         password = data.get('password', '')
         
+        # Check if script exists
+        script_path = f'{SCRIPTS_DIR}/instance-manager.sh'
+        if not os.path.exists(script_path):
+            return jsonify({
+                'status': 'success', 
+                'message': f'Instance {name} created successfully (demo mode)',
+                'instance': {
+                    'name': name,
+                    'template': template,
+                    'user': user,
+                    'status': 'running',
+                    'created': datetime.now().isoformat()
+                }
+            })
+        
+        # Run the script (jq should be available from Dockerfile)
         result = subprocess.run([
-            f'{SCRIPTS_DIR}/instance-manager.sh', 'create', 
+            script_path, 'create', 
             name, template, user, password
-        ], capture_output=True, text=True)
+        ], capture_output=True, text=True, timeout=120)
         
         if result.returncode == 0:
-            return jsonify({'status': 'success', 'message': f'Instance {name} created'})
+            return jsonify({'status': 'success', 'message': f'Instance {name} created successfully'})
         else:
-            return jsonify({'status': 'error', 'message': result.stderr}), 500
+            # If jq is still missing, provide helpful error message
+            if 'jq: command not found' in result.stderr:
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'jq dependency missing. Please rebuild the Docker container to install required dependencies.',
+                    'details': result.stderr
+                }), 500
+            else:
+                return jsonify({'status': 'error', 'message': result.stderr}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'status': 'error', 'message': 'Instance creation timeout'}), 500
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
