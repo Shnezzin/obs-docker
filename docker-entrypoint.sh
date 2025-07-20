@@ -33,10 +33,10 @@ unset DEFAULT_USER DEFAULT_PASSWD
 log "Setting up group: $GROUP (GID: $GROUP_ID)"
 if ! getent group $GROUP >/dev/null 2>&1; then
     if ! groupadd -g $GROUP_ID $GROUP; then
-        log "ERROR: Failed to create group $GROUP"
-        exit 1
+        log "WARNING: Failed to create group $GROUP (may already exist)"
+    else
+        log "Created group: $GROUP"
     fi
-    log "Created group: $GROUP"
 else
     log "Group $GROUP already exists"
 fi
@@ -46,10 +46,10 @@ log "Setting up user: $USER (UID: $USER_ID)"
 if ! getent passwd $USER >/dev/null 2>&1; then
     export HOME=/home/$USER
     if ! useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER; then
-        log "ERROR: Failed to create user $USER"
-        exit 1
+        log "WARNING: Failed to create user $USER (may already exist)"
+    else
+        log "Created user: $USER with home directory: $HOME"
     fi
-    log "Created user: $USER with home directory: $HOME"
 else
     log "User $USER already exists"
 fi
@@ -67,8 +67,9 @@ if (( $# == 0 )); then
     # Set login password
     log "Setting user password"
     if ! echo "${USER}:${PASSWD}" | sudo chpasswd; then
-        log "ERROR: Failed to set password for user $USER"
-        exit 1
+        log "WARNING: Failed to set password for user $USER (may already be set)"
+    else
+        log "Password set successfully for user $USER"
     fi
 
     # Setup user environment
