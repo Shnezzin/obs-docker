@@ -112,6 +112,20 @@ except Exception as e:
     docker_client = None
 
 if not docker_client:
+    print("🔧 Python Docker client failed - trying subprocess fallback...")
+    try:
+        from docker_subprocess_client import DockerSubprocessClient
+        subprocess_client = DockerSubprocessClient()
+        if subprocess_client.available:
+            subprocess_client.ping()
+            print("✅ Subprocess Docker client working - using as fallback")
+            docker_client = subprocess_client
+        else:
+            print("❌ Subprocess Docker client also failed")
+    except Exception as e:
+        print(f"❌ Subprocess fallback failed: {e}")
+
+if not docker_client:
     print("🔧 Running in standalone mode - Docker operations will return errors")
     print("💡 To enable Docker functionality:")
     print("   1. Ensure Docker daemon is running")
@@ -379,6 +393,9 @@ def create_instance():
                 'status': 'error', 
                 'message': 'Docker service not available. Please ensure Docker is running and accessible.'
             }), 503
+        
+        # Check if using subprocess client
+        is_subprocess_client = hasattr(docker_client, 'create_container')
         
         try:
             # Create OBS container with the main OBS Docker image
