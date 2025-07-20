@@ -100,7 +100,10 @@ class DockerAdapter:
         if self.client_type == 'python':
             return self.client.containers.get(name)
         else:
-            return SubprocessContainerWrapper(self.client, name)
+            wrapper = SubprocessContainerWrapper(self.client, name)
+            if not wrapper.exists:
+                return None
+            return wrapper
     
     def list_containers(self, all=False):
         """List containers with unified interface"""
@@ -170,6 +173,11 @@ class SubprocessContainerWrapper:
         """Get container labels"""
         info = self._get_info()
         return info.get('Config', {}).get('Labels', {})
+    
+    @property
+    def exists(self):
+        info = self._get_info()
+        return bool(info) and 'Id' in info
     
     def _get_info(self):
         """Get container info (cached)"""
