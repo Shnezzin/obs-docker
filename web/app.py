@@ -415,13 +415,32 @@ def create_instance():
             container_name = f'obs-{name}'
             
             # Check if container already exists
+            existing_container = None
             try:
-                existing_container = None
+                import docker.errors
                 try:
-                    # First try to get by exact name
                     existing_container = docker_client.get_container(container_name)
-                    
-                    # If we get here, container exists - check if it's actually running
+                except Exception as e:
+                    # Python Docker client: NotFound Exception
+                    if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 404:
+                        existing_container = None
+                    elif 'No such container' in str(e) or '404' in str(e):
+                        existing_container = None
+                    elif 'not found' in str(e).lower():
+                        existing_container = None
+                    elif isinstance(e, Exception) and e.__class__.__name__ == 'NotFound':
+                        existing_container = None
+                    else:
+                        print(f"Error checking for existing container {container_name}: {e}")
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'Error checking for existing instance: {str(e)}'
+                        }), 500
+                # Subprocess client: gibt None zurück, wenn nicht gefunden
+                if existing_container is None:
+                    print(f"Container {container_name} does not exist, will create new one")
+                else:
+                    # Container existiert -> Status prüfen
                     if isinstance(existing_container, dict):  # Subprocess client
                         if existing_container.get('State', {}).get('Status') not in ['removing', 'dead']:
                             return jsonify({
@@ -435,20 +454,7 @@ def create_instance():
                                 'status': 'error', 
                                 'message': f'Instance "{name}" already exists and is {existing_container.status}'
                             }), 409
-                    
-                    # If we get here, container exists but is being removed or is dead
                     print(f"Container {container_name} exists but is being removed or dead, will recreate")
-                    
-                except Exception as e:
-                    # Check if the error is because container doesn't exist
-                    if 'No such container' in str(e) or '404' in str(e):
-                        print(f"Container {container_name} does not exist, will create new one")
-                    else:
-                        print(f"Error checking for existing container {container_name}: {e}")
-                        return jsonify({
-                            'status': 'error',
-                            'message': f'Error checking for existing instance: {str(e)}'
-                        }), 500
             except Exception as e:
                 print(f"Error checking for existing container {container_name}: {e}")
                 return jsonify({
