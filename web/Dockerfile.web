@@ -28,10 +28,16 @@ COPY templates/ templates/
 RUN mkdir -p /opt/obs-config /opt/obs-instances /opt/obs-backups
 
 # Create non-root user and add to docker group for Docker socket access
-RUN groupadd -g 999 docker || true && \
+# Note: Docker group GID may vary between systems, so we handle this flexibly
+RUN groupadd -g 999 docker 2>/dev/null || groupmod -g 999 docker 2>/dev/null || true && \
     useradd -m -u 1000 webuser && \
     usermod -aG docker webuser && \
-    chown -R webuser:webuser /app /opt/obs-config /opt/obs-instances /opt/obs-backups
+    # Ensure webuser can access docker socket regardless of GID
+    usermod -aG 0 webuser && \
+    chown -R webuser:webuser /app /opt/obs-config /opt/obs-instances /opt/obs-backups && \
+    # Debug: Show user and group info
+    echo "User info:" && id webuser && \
+    echo "Docker group info:" && getent group docker || echo "Docker group not found"
 
 # Switch to non-root user
 USER webuser

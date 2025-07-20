@@ -9,8 +9,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Docker socket (works on Linux/macOS and Windows with Docker Desktop)
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Docker socket with proper permissions
+      - /var/run/docker.sock:/var/run/docker.sock
       # Alternative for Windows (uncomment if needed)
       # - //./pipe/docker_engine://./pipe/docker_engine
       - ../scripts:/scripts:ro
@@ -25,9 +25,16 @@ services:
       - CONFIG_DIR=/opt/obs-config
       - INSTANCES_DIR=/opt/obs-instances
       - BACKUPS_DIR=/opt/obs-backups
+      # Docker socket configuration
+      - DOCKER_HOST=unix:///var/run/docker.sock
     networks:
       - obs-network
     restart: unless-stopped
+    # Grant access to Docker socket by matching host docker group GID
+    group_add:
+      - "${DOCKER_GID:-999}"
+    # Alternative: run with docker group privileges
+    # user: "1000:${DOCKER_GID:-999}"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/system/stats"]
       interval: 30s

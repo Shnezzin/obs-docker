@@ -24,20 +24,81 @@ SCRIPTS_DIR = '/scripts'
 CONFIG_DIR = '/opt/obs-config'
 INSTANCES_DIR = '/opt/obs-instances'
 
-# Docker client with error handling
+# Docker client with enhanced error handling and diagnostics
 try:
     # Try to connect to Docker daemon
     print("🔄 Attempting to connect to Docker daemon...")
-    docker_client = docker.from_env()
-    # Test the connection
-    docker_client.ping()
-    print("✅ Docker client connected successfully")
-    print(f"📊 Docker version: {docker_client.version()['Version']}")
-except Exception as e:
-    print(f"⚠️ Docker client connection failed: {e}")
-    print("📝 This is normal if running locally without Docker socket access")
-    print("🔧 Running in standalone mode - system monitoring only")
+    
+    # Check if Docker socket exists
+    import os
+    socket_path = "/var/run/docker.sock"
+    if os.path.exists(socket_path):
+        print(f"✅ Docker socket found at {socket_path}")
+        socket_stat = os.stat(socket_path)
+        print(f"📊 Socket permissions: {oct(socket_stat.st_mode)}")
+        print(f"👤 Socket owner: UID {socket_stat.st_uid}, GID {socket_stat.st_gid}")
+        print(f"👤 Current user: UID {os.getuid()}, GID {os.getgid()}")
+        print(f"👥 User groups: {os.getgroups()}")
+    else:
+        print(f"❌ Docker socket not found at {socket_path}")
+    
+    # Try different Docker client configurations
     docker_client = None
+    
+    # Method 1: Default from_env
+    try:
+        print("🔄 Trying docker.from_env()...")
+        client = docker.from_env()
+        client.ping()
+        docker_client = client
+        print("✅ Docker client connected via from_env()")
+    except Exception as e1:
+        print(f"❌ from_env() failed: {e1}")
+        
+        # Method 2: Explicit socket path
+        try:
+            print("🔄 Trying explicit socket path...")
+            client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+            client.ping()
+            docker_client = client
+            print("✅ Docker client connected via explicit socket")
+        except Exception as e2:
+            print(f"❌ Explicit socket failed: {e2}")
+            
+            # Method 3: TCP connection (if available)
+            try:
+                print("🔄 Trying TCP connection...")
+                client = docker.DockerClient(base_url='tcp://localhost:2375')
+                client.ping()
+                docker_client = client
+                print("✅ Docker client connected via TCP")
+            except Exception as e3:
+                print(f"❌ TCP connection failed: {e3}")
+    
+    if docker_client:
+        version = docker_client.version()
+        print(f"📊 Docker version: {version.get('Version', 'Unknown')}")
+        print(f"📊 API version: {version.get('ApiVersion', 'Unknown')}")
+        
+        # Test basic operations
+        try:
+            containers = docker_client.containers.list(all=True, limit=1)
+            print(f"📦 Docker API test successful - found {len(containers)} containers")
+        except Exception as test_e:
+            print(f"⚠️ Docker API test failed: {test_e}")
+    else:
+        print("❌ All Docker connection methods failed")
+        
+except Exception as e:
+    print(f"⚠️ Docker client initialization error: {e}")
+    docker_client = None
+
+if not docker_client:
+    print("🔧 Running in standalone mode - Docker operations will return errors")
+    print("💡 To enable Docker functionality:")
+    print("   1. Ensure Docker daemon is running")
+    print("   2. Mount Docker socket: -v /var/run/docker.sock:/var/run/docker.sock")
+    print("   3. Add user to docker group: usermod -aG docker webuser")
 
 class OBSManager:
     def __init__(self):
