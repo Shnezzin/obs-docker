@@ -346,11 +346,10 @@ def api_instances():
                         from datetime import datetime
                         import dateutil.parser
                         start_time = dateutil.parser.parse(started_at)
-                        uptime_delta = datetime.now(start_time.tzinfo) - start_time
-                        days = uptime_delta.days
-                        hours, remainder = divmod(uptime_delta.seconds, 3600)
-                        minutes, _ = divmod(remainder, 60)
-                        uptime = f'{days}d {hours}h {minutes}m' if days > 0 else f'{hours}h {minutes}m'
+                        uptime = str(datetime.now(start_time.tzinfo) - start_time).split('.')[0]  # Remove microseconds
+                        uptime = f'{int(uptime.split(" days, ")[0])}d {uptime.split(" days, ")[1]}' if ' days, ' in uptime else uptime
+                else:
+                    uptime = 'N/A'
                 
                 instance_data = {
                     'name': instance_name,
@@ -461,10 +460,12 @@ def create_instance():
                 container.reload()  # Python Docker client
                 ports_info = container.attrs['NetworkSettings']['Ports']
                 container_id = container.id[:12]
+                container_status = container.status
             else:
                 # Subprocess client already returns container info
                 ports_info = container.get('NetworkSettings', {}).get('Ports', {})
                 container_id = container.get('Id', '')[:12]
+                container_status = container.get('State', {}).get('Status', 'unknown')
             
             # Extract assigned ports (handle both client types)
             rdp_port = 'N/A'
@@ -481,20 +482,14 @@ def create_instance():
                 'container_name': container_name,
                 'template': template,
                 'user': user,
-                'status': container.status,
-                'created': datetime.now().isoformat(),
+                'password': password or 'obs123',  # Don't return the actual password
+                'status': container_status,
                 'ports': {
                     'rdp': rdp_port,
                     'vnc': vnc_port
                 },
-                'network': {
-                    'ip_address': container.attrs['NetworkSettings']['Networks']['obs-network']['IPAddress'],
-                    'network': 'obs-network'
-                },
-                'access': {
-                    'rdp_url': f'rdp://localhost:{rdp_port}',
-                    'vnc_url': f'vnc://localhost:{vnc_port}'
-                }
+                'created_at': datetime.now().isoformat(),
+                'message': f'Container {container_name} created successfully'
             }
             
             return jsonify({
