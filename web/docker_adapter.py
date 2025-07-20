@@ -211,6 +211,13 @@ class SubprocessContainerWrapper:
         return self._name
     
     @property
+    def ports(self):
+        info = self._get_info()
+        # docker inspect liefert Ports unter NetworkSettings.Ports
+        ports = info.get('NetworkSettings', {}).get('Ports', {})
+        return ports
+    
+    @property
     def exists(self):
         info = self._get_info()
         return bool(info) and 'Id' in info
