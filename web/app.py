@@ -127,14 +127,21 @@ talisman = Talisman(
     force_https=not debug_mode,
     strict_transport_security=True,
     session_cookie_secure=not debug_mode,
-    force_https_permanent=False,
-    ssl_options={
-        'certfile': '/path/to/cert.pem',  # Update with your certificate path
-        'keyfile': '/path/to/key.pem',    # Update with your key path
-        'ssl_version': 'TLSv1_2',
-        'cert_reqs': 'CERT_NONE'  # For development only, use CERT_REQUIRED in production
-    } if not debug_mode else None
+    force_https_permanent=False
 )
+
+# Configure SSL for the Flask app
+if not debug_mode:
+    app.config.update(
+        PREFERRED_URL_SCHEME='https',
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+    )
+
+    # SSL configuration should be handled by your WSGI server (gunicorn, etc.)
+    # Add this to your gunicorn command line or config:
+    # --certfile=/path/to/cert.pem --keyfile=/path/to/key.pem
 
 # Initialize SocketIO
 socketio = SocketIO(
