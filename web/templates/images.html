@@ -173,10 +173,30 @@
         const imagesTable = $('#imagesTable').DataTable({
             ajax: {
                 url: '/api/images',
-                dataSrc: 'data',
+                dataSrc: function(json) {
+                    // Handle both response formats: {status, data} or direct array
+                    if (json && json.status === 'success' && Array.isArray(json.data)) {
+                        return json.data;
+                    } else if (Array.isArray(json)) {
+                        return json;
+                    } else if (json && json.images) {
+                        return json.images;
+                    }
+                    console.error('Unexpected API response format:', json);
+                    return [];
+                },
                 error: function(xhr, error, thrown) {
-                    console.error('Error loading images:', error);
+                    console.error('Error loading images:', error, xhr.responseText);
                     showToast('Error loading images: ' + (xhr.responseJSON?.message || 'Unknown error'), 'danger');
+                    // Show error in table
+                    $('#imagesTable').DataTable().clear().draw();
+                    $('#imagesTable tbody').html(`
+                        <tr>
+                            <td colspan="5" class="text-center text-danger">
+                                <i class="fas fa-exclamation-triangle"></i> Error loading images. Please check the console for details.
+                            </td>
+                        </tr>
+                    `);
                 }
             },
             columns: [

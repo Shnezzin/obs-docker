@@ -214,12 +214,23 @@
     
     async function loadInstances() {
         try {
-            const result = await apiCall('/api/instances');
-            instances = result.instances || {};
+            const response = await makeAuthenticatedRequest('/api/instances');
+            const result = await response.json();
+            instances = result.instances || result || {};
+            console.log('[DEBUG] Loaded instances:', instances);
             updateInstancesTable();
         } catch (error) {
             console.error('Error loading instances:', error);
-            showToast('Failed to load instances', 'danger');
+            showToast('Failed to load instances: ' + (error.message || 'Unknown error'), 'danger');
+            
+            // Show error in table
+            const tbody = document.getElementById('instancesTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error loading instances. Please check the console for details.
+                    </td>
+                </tr>`;
         }
     }
     

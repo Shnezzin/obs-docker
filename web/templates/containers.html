@@ -468,13 +468,22 @@
             const response = await fetch('/api/containers');
             const result = await response.json();
             console.log('[DEBUG] /api/containers result:', result);
-            const containers = result.containers || {};
-            console.log('[DEBUG] Extracted containers:', containers);
-            console.log('[DEBUG] Container keys:', Object.keys(containers));
-            console.log('[DEBUG] Container count:', Object.keys(containers).length);
+            
+            // Handle both response formats: direct containers object or {status, containers} object
+            const containers = result.containers || result || {};
+            console.log('[DEBUG] Processed containers:', containers);
+            
             updateContainersTable(containers);
         } catch (error) {
             console.error('[DEBUG] Error loading containers:', error);
+            // Show error message to user
+            const tbody = document.getElementById('containersTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error loading containers. Please check the console for details.
+                    </td>
+                </tr>`;
         }
     }
 
