@@ -65,54 +65,26 @@ limiter = Limiter(
     default_limits=[app.config['RATE_LIMIT']]
 )
 
-# Enable security headers
+# Enable security headers - Development CSP (very permissive)
 csp = {
-    'default-src': ["'self'"],
-    'script-src': [
-        "'self'",
-        "'unsafe-inline'",
-        "'strict-dynamic'",
-        'https:',
-        'http:'
-    ],
-    'style-src': [
-        "'self'",
-        "'unsafe-inline'",
-        'https:',
-        'http:'
-    ],
-    'img-src': [
-        "'self'",
-        'data:',
-        'blob:',
-        'https:',
-        'http:'
-    ],
-    'font-src': [
-        "'self'",
-        'data:',
-        'https:',
-        'http:'
-    ],
-    'connect-src': [
-        "'self'",
-        'ws:',
-        'wss:',
-        'https:',
-        'http:'
-    ],
-    'object-src': ["'none'"],
-    'base-uri': ["'self'"],
-    'form-action': ["'self'"],
-    'frame-ancestors': ["'self'"],
+    'default-src': ["'self'", '*', 'unsafe-inline', 'unsafe-eval', 'data:', 'blob:'],
+    'script-src': ["'self'", '*', 'unsafe-inline', 'unsafe-eval', 'data:'],
+    'style-src': ["'self'", '*', 'unsafe-inline', 'data:'],
+    'img-src': ["'self'", '*', 'data:', 'blob:'],
+    'font-src': ["'self'", '*', 'data:'],
+    'connect-src': ["'self'", '*', 'ws:', 'wss:'],
+    'frame-src': ["'self'", '*'],
+    'media-src': ["'self'", '*', 'data:'],
+    'object-src': ["'self'", '*'],
+    'child-src': ["'self'", '*'],
+    'worker-src': ["'self'", '*', 'blob:'],
+    'form-action': ["'self'", '*'],
+    'frame-ancestors': ["'self'", '*'],
     'upgrade-insecure-requests': ''
 }
 
-# Add context processor to make csp_nonce available in templates
-@app.context_processor
-def inject_csp_nonce():
-    nonce = os.urandom(16).hex()
-    return {'csp_nonce': lambda: nonce}
+# Disable nonce in development to avoid conflicts with 'unsafe-inline'
+content_security_policy_nonce_in = [] if os.environ.get('FLASK_ENV', 'production').lower() == 'development' else ['script-src', 'style-src']
 
 # Check if we're in development mode
 debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
@@ -121,7 +93,7 @@ debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
 talisman = Talisman(
     app,
     content_security_policy=csp,
-    content_security_policy_nonce_in=['script-src', 'style-src'],
+    content_security_policy_nonce_in=content_security_policy_nonce_in,
     force_https=not debug_mode,
     strict_transport_security=True,
     session_cookie_secure=not debug_mode,

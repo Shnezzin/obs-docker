@@ -10,7 +10,7 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
-    <style nonce="{{ csp_nonce() }}">
+    <style>
         .sidebar {
             min-height: 100vh;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -160,7 +160,7 @@
     <!-- Toast container for notifications -->
     <div class="toast-container"></div>
     
-    <script nonce="{{ csp_nonce() }}">
+    <script>
         // Global configuration
         window.CONFIG = {
             API_BASE_URL: '{{ url_for("api_instances") }}'.replace('/instances', ''),
@@ -170,7 +170,7 @@
     </script>
     
     <!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -182,7 +182,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     
     <!-- Main application script -->
-    <script nonce="{{ csp_nonce() }}">
+    <script>
         // Show loading indicator on all AJAX requests
         $(document).ajaxStart(function() {
             $('#loading').show();
@@ -284,15 +284,9 @@
             // Merge options with defaults
             const settings = { ...defaults, ...options };
 
-            // Add CSRF token if available
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (csrfToken) {
-                settings.headers['X-CSRFToken'] = csrfToken;
-            }
-
             try {
                 showLoading();
-                const response = await fetch(CONFIG.API_BASE_URL + url, settings);
+                const response = await fetch(window.CONFIG.API_BASE_URL + url, settings);
                 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
