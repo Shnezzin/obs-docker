@@ -2208,9 +2208,28 @@ def api_system_images():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Run OBS Docker Web Interface')
+    parser.add_argument('--no-ssl', action='store_true', help='Disable SSL/HTTPS (for development only)')
+    parser.add_argument('--port', type=int, default=8080, help='Port to run the server on')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
+    args = parser.parse_args()
+    
     # Ensure required directories exist
     os.makedirs('/opt/obs-config', exist_ok=True)
     os.makedirs('/opt/obs-instances', exist_ok=True)
     
+    # Configure SSL based on command line argument
+    ssl_context = None
+    if not args.no_ssl:
+        # For production, you should provide proper certificate files
+        ssl_context = 'adhoc'  # This will use a self-signed certificate
+    
     # Run the application
-    socketio.run(app, host='0.0.0.0', port=8080, debug=False)
+    socketio.run(app, 
+                host=args.host, 
+                port=args.port, 
+                debug=debug_mode,
+                ssl_context=ssl_context)
