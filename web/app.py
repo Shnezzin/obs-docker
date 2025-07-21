@@ -76,19 +76,22 @@ csp = {
         'https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js',
         'https://cdn.jsdelivr.net/npm/chart.js',
         'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js',
-        "'strict-dynamic'"
+        "'unsafe-inline'",
+        "'strict-dynamic'",
+        "'nonce-{{ csp_nonce() }}"
     ],
     'style-src': [
         "'self'",
         'https://cdn.jsdelivr.net',
         'https://cdnjs.cloudflare.com',
         'https://fonts.googleapis.com',
-        "'unsafe-inline'"  # Required for inline styles
+        "'unsafe-inline'"
     ],
     'img-src': [
         "'self'",
         'data:',
-        'blob:'  # Required for dynamic images
+        'blob:',
+        'https:'
     ],
     'font-src': [
         "'self'",
@@ -98,9 +101,14 @@ csp = {
     ],
     'connect-src': [
         "'self'",
-        'ws:',  # For WebSocket connections
-        'wss:'  # For secure WebSocket connections
-    ]
+        'ws:',
+        'wss:'
+    ],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'self'"],
+    'upgrade-insecure-requests': ''
 }
 
 # Check if we're in development mode
@@ -110,10 +118,10 @@ debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
 talisman = Talisman(
     app,
     content_security_policy=csp,
-    content_security_policy_nonce_in=['script-src'],
-    force_https=not debug_mode,  # Only force HTTPS in production
+    content_security_policy_nonce_in=['script-src', 'style-src'],
+    force_https=not debug_mode,
     strict_transport_security=True,
-    session_cookie_secure=not debug_mode,  # Only secure in production
+    session_cookie_secure=not debug_mode,
     force_https_permanent=False
 )
 
