@@ -65,35 +65,39 @@ limiter = Limiter(
     default_limits=[app.config['RATE_LIMIT']]
 )
 
-# Enable security headers - Development CSP (very permissive)
+# Minimal CSP configuration
 csp = {
-    'default-src': ["'self'", '*', 'unsafe-inline', 'unsafe-eval', 'data:', 'blob:'],
-    'script-src': ["'self'", '*', 'unsafe-inline', 'unsafe-eval', 'data:'],
-    'style-src': ["'self'", '*', 'unsafe-inline', 'data:'],
-    'img-src': ["'self'", '*', 'data:', 'blob:'],
-    'font-src': ["'self'", '*', 'data:'],
-    'connect-src': ["'self'", '*', 'ws:', 'wss:'],
-    'frame-src': ["'self'", '*'],
-    'media-src': ["'self'", '*', 'data:'],
-    'object-src': ["'self'", '*'],
-    'child-src': ["'self'", '*'],
-    'worker-src': ["'self'", '*', 'blob:'],
-    'form-action': ["'self'", '*'],
-    'frame-ancestors': ["'self'", '*'],
+    'default-src': ["'self'"],
+    'script-src': [
+        "'self'",
+        'https://code.jquery.com',
+        'https://cdn.jsdelivr.net',
+        'https://cdnjs.cloudflare.com',
+        "'unsafe-inline'",
+        "'unsafe-eval'"
+    ],
+    'style-src': [
+        "'self'",
+        'https://cdn.jsdelivr.net',
+        'https://cdnjs.cloudflare.com',
+        'https://fonts.googleapis.com',
+        "'unsafe-inline'"
+    ],
+    'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+    'font-src': ["'self'", 'data:', 'https:'],
+    'connect-src': ["'self'", 'ws:', 'wss:'],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'self'"],
     'upgrade-insecure-requests': ''
 }
 
-# Disable nonce in development to avoid conflicts with 'unsafe-inline'
-content_security_policy_nonce_in = [] if os.environ.get('FLASK_ENV', 'production').lower() == 'development' else ['script-src', 'style-src']
-
-# Check if we're in development mode
-debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
-
-# Initialize Talisman with appropriate settings
+# Initialize Talisman without nonce for now
 talisman = Talisman(
     app,
     content_security_policy=csp,
-    content_security_policy_nonce_in=content_security_policy_nonce_in,
+    content_security_policy_nonce_in=[],  # Disable nonce for now
     force_https=not debug_mode,
     strict_transport_security=True,
     session_cookie_secure=not debug_mode,
