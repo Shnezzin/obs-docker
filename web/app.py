@@ -77,8 +77,7 @@ csp = {
         'https://cdn.jsdelivr.net/npm/chart.js',
         'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js',
         "'unsafe-inline'",
-        "'strict-dynamic'",
-        "'nonce-{{ csp_nonce() }}"
+        "'strict-dynamic'"
     ],
     'style-src': [
         "'self'",
@@ -111,6 +110,12 @@ csp = {
     'upgrade-insecure-requests': ''
 }
 
+# Add context processor to make csp_nonce available in templates
+@app.context_processor
+def inject_csp_nonce():
+    nonce = os.urandom(16).hex()
+    return {'csp_nonce': lambda: nonce}
+
 # Check if we're in development mode
 debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
 
@@ -122,7 +127,13 @@ talisman = Talisman(
     force_https=not debug_mode,
     strict_transport_security=True,
     session_cookie_secure=not debug_mode,
-    force_https_permanent=False
+    force_https_permanent=False,
+    ssl_options={
+        'certfile': '/path/to/cert.pem',  # Update with your certificate path
+        'keyfile': '/path/to/key.pem',    # Update with your key path
+        'ssl_version': 'TLSv1_2',
+        'cert_reqs': 'CERT_NONE'  # For development only, use CERT_REQUIRED in production
+    } if not debug_mode else None
 )
 
 # Initialize SocketIO
