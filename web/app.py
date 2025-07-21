@@ -68,10 +68,39 @@ limiter = Limiter(
 # Enable security headers
 csp = {
     'default-src': ["'self'"],
-    'script-src': ["'self'"],
-    'style-src': ["'self'"],
-    'img-src': ["'self'"],
-    'connect-src': ["'self'"],
+    'script-src': [
+        "'self'",
+        'https://code.jquery.com',
+        'https://cdn.jsdelivr.net',
+        'https://cdnjs.cloudflare.com',
+        'https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js',
+        'https://cdn.jsdelivr.net/npm/chart.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js',
+        "'unsafe-inline'"  # Required for inline scripts
+    ],
+    'style-src': [
+        "'self'",
+        'https://cdn.jsdelivr.net',
+        'https://cdnjs.cloudflare.com',
+        'https://fonts.googleapis.com',
+        "'unsafe-inline'"  # Required for inline styles
+    ],
+    'img-src': [
+        "'self'",
+        'data:',
+        'blob:'  # Required for dynamic images
+    ],
+    'font-src': [
+        "'self'",
+        'https://cdnjs.cloudflare.com',
+        'https://fonts.gstatic.com',
+        'data:'
+    ],
+    'connect-src': [
+        "'self'",
+        'ws:',  # For WebSocket connections
+        'wss:'  # For secure WebSocket connections
+    ]
 }
 
 # Check if we're in development mode
