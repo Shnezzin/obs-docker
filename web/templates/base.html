@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}OBS Docker Manager{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
@@ -169,14 +168,10 @@
     <!-- Toast container for notifications -->
     <div class="toast-container"></div>
 
-    <!-- CSRF Token Handling -->
-    <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
-    
     <script>
         // Global configuration
         const CONFIG = {
             API_BASE_URL: '{{ url_for("api_instances") }}'.replace('/instances', ''),
-            CSRF_TOKEN: '{{ csrf_token() }}',
             SOCKET_URL: '{{ request.url_root[:-1] }}',  // Remove trailing slash
             DEBUG: {{ 'true' if config.get('DEBUG') else 'false' }}
         };
