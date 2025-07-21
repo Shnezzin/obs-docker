@@ -65,6 +65,12 @@ else
     log "User $USER already exists"
 fi
 
+# Fix group name for GID 1000 if needed
+EXISTING_GROUP=$(getent group 1000 | cut -d: -f1)
+if [ "$EXISTING_GROUP" != "developer" ] && [ -n "$EXISTING_GROUP" ]; then
+    groupmod -n developer "$EXISTING_GROUP"
+fi
+
 # Revert permissions for security
 log "Reverting SUID permissions for security"
 if ! sudo chmod u-s /usr/sbin/useradd /usr/sbin/groupadd; then
