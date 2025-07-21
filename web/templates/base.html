@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}OBS Docker Manager{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
@@ -11,6 +12,10 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Bootstrap JS Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Socket.IO -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     
@@ -164,10 +169,57 @@
     <!-- Toast container for notifications -->
     <div class="toast-container"></div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- CSRF Token Handling -->
+    <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
     
     <script>
+        // Global configuration
+        const CONFIG = {
+            API_BASE_URL: '{{ url_for("api_instances") }}'.replace('/instances', ''),
+            CSRF_TOKEN: '{{ csrf_token() }}',
+            SOCKET_URL: '{{ request.url_root[:-1] }}',  // Remove trailing slash
+            DEBUG: {{ 'true' if config.get('DEBUG') else 'false' }}
+        };
+
+        // Show loading indicator on all AJAX requests
+        $(document).ajaxStart(function() {
+            $('#loading').show();
+        }).ajaxStop(function() {
+            $('#loading').hide();
+        });
+
+        // Global AJAX error handler
+        $(document).ajaxError(function(event, jqXHR, settings, error) {
+            console.error('AJAX Error:', error);
+            
+            let errorMessage = 'An error occurred while processing your request.';
+            
+            if (jqXHR.responseJSON && jqXHR.responseJSON.message) {
+                errorMessage = jqXHR.responseJSON.message;
+            } else if (jqXHR.status === 0) {
+                errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+            } else if (jqXHR.status === 401) {
+                errorMessage = 'Your session has expired. Please log in again.';
+                window.location.href = '{{ url_for("auth.login") }}?next=' + encodeURIComponent(window.location.pathname);
+                return;
+            } else if (jqXHR.status === 403) {
+                errorMessage = 'You do not have permission to perform this action.';
+            } else if (jqXHR.status === 404) {
+                errorMessage = 'The requested resource was not found.';
+            } else if (jqXHR.status === 422) {
+                errorMessage = 'Validation error. Please check your input.';
+                if (jqXHR.responseJSON && jqXHR.responseJSON.errors) {
+                    errorMessage += '\n' + Object.values(jqXHR.responseJSON.errors).flat().join('\n');
+                }
+            } else if (jqXHR.status === 429) {
+                errorMessage = 'Too many requests. Please wait a moment and try again.';
+            } else if (jqXHR.status >= 500) {
+                errorMessage = 'A server error occurred. Please try again later.';
+            }
+            
+            showToast(errorMessage, 'danger');
+        });
+
         // Initialize Socket.IO
         const socket = io();
         

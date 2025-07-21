@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Login - OBS Docker Manager{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow-lg border-0 rounded-lg mt-5">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="text-center my-3">
+                        <i class="fas fa-sign-in-alt me-2"></i>Login
+                    </h3>
+                </div>
+                <div class="card-body p-4">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    <form id="loginForm" method="POST" action="{{ url_for('auth.login') }}" novalidate>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+                        
+                        <div class="mb-3">
+                            <label for="username" class="form-label">
+                                <i class="fas fa-user me-1"></i> Username
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="username" name="username" 
+                                   required autofocus placeholder="Enter your username"
+                                   value="{{ form.username.data if form and form.username.data }}">
+                            <div class="invalid-feedback">
+                                Please enter your username.
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="password" class="form-label">
+                                <i class="fas fa-lock me-1"></i> Password
+                            </label>
+                            <div class="input-group">
+                                <input type="password" class="form-control form-control-lg" id="password" 
+                                       name="password" required placeholder="Enter your password">
+                                <button class="btn btn-outline-secondary toggle-password" type="button">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <div class="invalid-feedback">
+                                    Please enter your password.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="remember" name="remember">
+                                <label class="form-check-label" for="remember">
+                                    Remember me
+                                </label>
+                            </div>
+                            <a href="#" class="text-decoration-none">Forgot password?</a>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="loginButton">
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                                <span class="ms-1">Login</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="card-footer text-center py-3">
+                    <div class="small">
+                        Don't have an account? 
+                        <a href="#" class="text-decoration-none">Contact Administrator</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-4">
+                <p class="text-muted">
+                    <small>OBS Docker Manager v{{ config.get('VERSION', '1.0.0') }}</small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    $(document).ready(function() {
+        // Toggle password visibility
+        $('.toggle-password').on('click', function() {
+            const $password = $('#password');
+            const $icon = $(this).find('i');
+            
+            if ($password.attr('type') === 'password') {
+                $password.attr('type', 'text');
+                $icon.removeClass('fa-eye').addClass('fa-eye-slash');
+            } else {
+                $password.attr('type', 'password');
+                $icon.removeClass('fa-eye-slash').addClass('fa-eye');
+            }
+        });
+        
+        // Form validation
+        const form = document.getElementById('loginForm');
+        
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            } else {
+                // Show loading state
+                const button = $('#loginButton');
+                button.prop('disabled', true);
+                button.find('.spinner-border').removeClass('d-none');
+                button.find('span:not(.spinner-border)').text('Logging in...');
+            }
+            
+            form.classList.add('was-validated');
+        }, false);
+        
+        // Auto-focus username field on page load
+        $('#username').focus();
+        
+        // Handle errors passed in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('error')) {
+            const error = urlParams.get('error');
+            let message = 'An error occurred during login.';
+            
+            if (error === 'invalid_credentials') {
+                message = 'Invalid username or password.';
+            } else if (error === 'account_locked') {
+                message = 'Account is locked. Please try again later or contact support.';
+            } else if (error === 'inactive') {
+                message = 'This account is inactive. Please contact an administrator.';
+            }
+            
+            showToast(message, 'danger');
+            
+            // Clean up URL
+            const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]error=[^&]+/, '').replace(/^&/, '?');
+            window.history.replaceState({}, document.title, cleanUrl);
+        }
+    });
+</script>
+{% endblock %}

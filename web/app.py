@@ -9,20 +9,157 @@ import json
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
-from flask_socketio import SocketIO, emit
+import secrets
+from functools import wraps
+from datetime import datetime, timezone, timedelta
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, abort
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_talisman import Talisman
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_httpauth import HTTPBasicAuth
+from werkzeug.security import generate_password_hash, check_password_hash
+from dotenv import load_dotenv
 import docker
 import psutil
 
+# Load environment variables from .env file
+load_dotenv()
+
 app = Flask(__name__)
-app.secret_key = 'obs-docker-secret-key-change-in-production'
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Configuration
-SCRIPTS_DIR = '/scripts'
-CONFIG_DIR = '/opt/obs-config'
-INSTANCES_DIR = '/opt/obs-instances'
+app.config.update(
+    SECRET_KEY=os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32)),
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload size
+    UPLOAD_FOLDER='/tmp/uploads',
+    ALLOWED_EXTENSIONS={'zip', 'tar', 'gz'},
+    ADMIN_USERNAME=os.environ.get('ADMIN_USERNAME', 'admin'),
+    ADMIN_PASSWORD_HASH=os.environ.get('ADMIN_PASSWORD_HASH', generate_password_hash('changeme')),  # Must be changed in production
+    RATE_LIMIT=os.environ.get('RATE_LIMIT', '200 per day;50 per hour'),
+    CSRF_ENABLED=os.environ.get('CSRF_ENABLED', 'True').lower() == 'true'
+)
+
+# Initialize security extensions
+csrf = CSRFProtect(app)
+auth = HTTPBasicAuth()
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[app.config['RATE_LIMIT']]
+)
+
+# Enable security headers
+csp = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'"],
+    'style-src': ["'self'"],
+    'img-src': ["'self'"],
+    'connect-src': ["'self'"],
+}
+
+talisman = Talisman(
+    app,
+    force_https=True,
+    strict_transport_security=True,
+    session_cookie_secure=True,
+    content_security_policy=csp,
+    content_security_policy_nonce_in=['script-src'],
+    referrer_policy='strict-origin-when-cross-origin',
+    permissions_policy={
+        'geolocation': '()',
+        'camera': '()',
+        'microphone': '()',
+        'payment': '()',
+    }
+)
+
+# Initialize SocketIO with CSRF protection
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=os.environ.get('ALLOWED_ORIGINS', '').split(','),
+    async_mode='eventlet',
+    ping_timeout=30,
+    ping_interval=25,
+    max_http_buffer_size=10 * 1024 * 1024  # 10MB
+)
+
+# Authentication
+@auth.verify_password
+def verify_password(username, password):
+    if username == app.config['ADMIN_USERNAME'] and \
+       check_password_hash(app.config['ADMIN_PASSWORD_HASH'], password):
+        return username
+
+# Require authentication for all API endpoints
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': 'Unauthorized'}), 401
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.before_request
+def before_request():
+    # Enforce HTTPS in production
+    if not request.is_secure and app.env == 'production':
+        url = request.url.replace('http://', 'https://', 1)
+        code = 301
+        return redirect(url, code=code)
+    
+    # Set session timeout
+    session.permanent = True
+    app.permanent_session_lifetime = app.config['PERMANENT_SESSION_LIFETIME']
+
+# Error handlers
+@app.errorhandler(400)
+def bad_request(e):
+    return render_template('error.html', error='Bad Request', code=400), 400
+
+@app.errorhandler(401)
+def unauthorized(e):
+    return render_template('error.html', error='Unauthorized', code=401), 401
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template('error.html', error='Forbidden', code=403), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('error.html', error='Not Found', code=404), 404
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return render_template('error.html', error='File too large', code=413), 413
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return render_template('error.html', error='Rate limit exceeded', code=429), 429
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    app.logger.error(f'Server Error: {e}', exc_info=True)
+    return render_template('error.html', error='Internal Server Error', code=500), 500
+
+# Helper functions
+def validate_input(input_str, max_length=100, allowed_chars=None):
+    """Validate and sanitize user input"""
+    if not input_str or len(input_str) > max_length:
+        return False
+    if allowed_chars and not all(c in allowed_chars for c in input_str):
+        return False
+    return input_str.strip()
+
+def sanitize_filename(filename):
+    """Sanitize filename to prevent path traversal"""
+    return os.path.basename(filename)
 
 # Docker client with enhanced error handling and diagnostics
 try:
@@ -94,13 +231,13 @@ try:
                 print(f"❌ Custom socket failed: {e3}")
     
     if docker_client:
-        version = docker_adapter.version()
+        version = docker_client.version()
         print(f"📊 Docker version: {version.get('Version', 'Unknown')}")
         print(f"📊 API version: {version.get('ApiVersion', 'Unknown')}")
         
         # Test basic operations
         try:
-            containers = docker_adapter.containers.list(all=True)
+            containers = docker_client.containers.list(all=True)
             print(f"📦 Docker API test successful - found {len(containers)} containers")
         except Exception as test_e:
             print(f"⚠️ Docker API test failed: {test_e}")
@@ -150,8 +287,8 @@ class OBSManager:
             }
             
             # Container stats (only if Docker client is available)
-            if docker_adapter:
-                containers = docker_adapter.containers.list(all=True)
+            if docker_client:
+                containers = docker_client.containers.list(all=True)
                 self.containers = {}
                 
                 for container in containers:
@@ -296,7 +433,7 @@ def api_containers():
 @app.route('/api/container/<container_name>/start', methods=['POST'])
 def start_container(container_name):
     """Start a container"""
-    if not docker_adapter:
+    if not docker_client:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = find_container_by_name_or_instance(container_name)
@@ -310,7 +447,7 @@ def start_container(container_name):
 @app.route('/api/container/<container_name>/stop', methods=['POST'])
 def stop_container(container_name):
     """Stop a container"""
-    if not docker_adapter:
+    if not docker_client:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = find_container_by_name_or_instance(container_name)
@@ -324,7 +461,7 @@ def stop_container(container_name):
 @app.route('/api/container/<container_name>/restart', methods=['POST'])
 def restart_container(container_name):
     """Restart a container"""
-    if not docker_adapter:
+    if not docker_client:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = find_container_by_name_or_instance(container_name)
@@ -338,7 +475,7 @@ def restart_container(container_name):
 @app.route('/api/container/<container_name>/logs')
 def container_logs(container_name):
     """Get container logs"""
-    if not docker_adapter:
+    if not docker_client:
         return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
     try:
         container = find_container_by_name_or_instance(container_name)
@@ -358,7 +495,7 @@ def instances():
 def api_instances():
     """Get all Docker containers (nicht nur OBS)"""
     try:
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available',
@@ -367,7 +504,7 @@ def api_instances():
             }), 503
         
         # Alle Container auflisten
-        all_containers = docker_adapter.containers.list(all=True)
+        all_containers = docker_client.containers.list(all=True)
         print(f"Found {len(all_containers)} containers total")
         container_infos = []
         for idx, container in enumerate(all_containers):
@@ -497,11 +634,11 @@ def ensure_user_exists(container_name, user, password, debug_logs=None):
     
     try:
         log_debug(f"called for container {container_name}, user {user}")
-        if not docker_adapter:
-            log_debug("docker_adapter not available")
+        if not docker_client:
+            log_debug("docker_client not available")
             return False
         
-        container = docker_adapter.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         if not container:
             log_debug(f"Container {container_name} not found")
             return False
@@ -598,14 +735,14 @@ def create_instance():
             return jsonify({'status': 'error', 'message': 'Instance name too long (max 50 characters)'}), 400
         
         # Check if Docker client is available
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available. Please ensure Docker is running and accessible.'
             }), 503
         
         # Check if using subprocess client
-        is_subprocess_client = hasattr(docker_adapter, 'create_container')
+        is_subprocess_client = hasattr(docker_client, 'create_container')
         
         try:
             # Create OBS container with the main OBS Docker image
@@ -616,7 +753,7 @@ def create_instance():
             try:
                 import docker.errors
                 try:
-                    existing_container = docker_adapter.get_container(container_name)
+                    existing_container = docker_client.get_container(container_name)
                 except Exception as e:
                     if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 404:
                         existing_container = None
@@ -661,7 +798,7 @@ def create_instance():
                 }), 500
             
             # Create and start the container
-            container = docker_adapter.create_container(
+            container = docker_client.create_container(
                 image='obs-docker:latest',  # Use the main OBS Docker image
                 name=container_name,
                 ports={
@@ -720,7 +857,7 @@ def create_instance():
                 # For SubprocessContainerWrapper, ports might be in different format
                 # We'll need to get the actual port mapping from docker inspect
                 try:
-                    container_info = docker_adapter.get_container(container_name)
+                    container_info = docker_client.get_container(container_name)
                     if hasattr(container_info, '_get_info'):
                         info = container_info._get_info()
                         ports = info.get('NetworkSettings', {}).get('Ports', {})
@@ -779,14 +916,14 @@ def find_container_by_name_or_instance(name_or_instance, debug_logs=None):
     
     log_debug(f"called with: {name_or_instance}")
     
-    if not docker_adapter:
-        log_debug("docker_adapter not available")
+    if not docker_client:
+        log_debug("docker_client not available")
         return None
     
     # Try direct container name first
     try:
         log_debug(f"Trying direct container name: {name_or_instance}")
-        container = docker_adapter.containers.get(name_or_instance)
+        container = docker_client.containers.get(name_or_instance)
         if container:
             log_debug(f"Found container by direct name: {container}")
             return container
@@ -797,7 +934,7 @@ def find_container_by_name_or_instance(name_or_instance, debug_logs=None):
     container_name = get_container_name(name_or_instance)
     try:
         log_debug(f"Trying as instance name: {container_name}")
-        container = docker_adapter.containers.get(container_name)
+        container = docker_client.containers.get(container_name)
         if container:
             log_debug(f"Found container by instance name: {container}")
             return container
@@ -807,7 +944,7 @@ def find_container_by_name_or_instance(name_or_instance, debug_logs=None):
     # Try to find by instance label
     try:
         log_debug(f"Trying to find by instance label: {name_or_instance}")
-        all_containers = docker_adapter.containers.list(all=True)
+        all_containers = docker_client.containers.list(all=True)
         log_debug(f"Found {len(all_containers)} containers total")
         
         for container in all_containers:
@@ -830,7 +967,7 @@ def find_container_by_name_or_instance(name_or_instance, debug_logs=None):
 def start_instance(instance_name):
     """Start an OBS instance container"""
     try:
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -839,7 +976,7 @@ def start_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_adapter.containers.get(container_name)
+            container = docker_client.containers.get(container_name)
             
             if container is None:
                 return jsonify({
@@ -886,7 +1023,7 @@ def start_instance(instance_name):
 def stop_instance(instance_name):
     """Stop an OBS instance container"""
     try:
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -895,7 +1032,7 @@ def stop_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_adapter.containers.get(container_name)
+            container = docker_client.containers.get(container_name)
             
             if container is None:
                 return jsonify({
@@ -942,7 +1079,7 @@ def stop_instance(instance_name):
 def restart_instance(instance_name):
     """Restart an OBS instance container"""
     try:
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -951,7 +1088,7 @@ def restart_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_adapter.containers.get(container_name)
+            container = docker_client.containers.get(container_name)
             
             if container is None:
                 return jsonify({
@@ -992,7 +1129,7 @@ def restart_instance(instance_name):
 def remove_instance(instance_name):
     """Remove an OBS instance container"""
     try:
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({
                 'status': 'error', 
                 'message': 'Docker service not available'
@@ -1001,7 +1138,7 @@ def remove_instance(instance_name):
         container_name = get_container_name(instance_name)
         
         try:
-            container = docker_adapter.containers.get(container_name)
+            container = docker_client.containers.get(container_name)
             
             if container is None:
                 return jsonify({
@@ -1018,12 +1155,12 @@ def remove_instance(instance_name):
             
             # Clean up named volumes
             try:
-                docker_adapter.volumes.get(f'obs-config-{instance_name}').remove()
+                docker_client.volumes.get(f'obs-config-{instance_name}').remove()
             except Exception:
                 pass
             
             try:
-                docker_adapter.volumes.get(f'obs-scenes-{instance_name}').remove()
+                docker_client.volumes.get(f'obs-scenes-{instance_name}').remove()
             except Exception:
                 pass
             
@@ -1269,13 +1406,13 @@ def system_info():
             disk_free = 0
         # Get Docker version safely
         docker_version = 'Not available'
-        if docker_adapter:
+        if docker_client:
             try:
-                version_info = docker_adapter.version()
-                print('[DEBUG] docker_adapter.version:', version_info)
+                version_info = docker_client.version()
+                print('[DEBUG] docker_client.version:', version_info)
                 docker_version = version_info['Version']
             except Exception as e:
-                print('[DEBUG] docker_adapter.version() error:', e)
+                print('[DEBUG] docker_client.version() error:', e)
                 docker_version = 'Connected but version unavailable'
         system_info = {
             'platform': {
@@ -1292,9 +1429,9 @@ def system_info():
                 'executable': sys.executable or 'Unknown'
             },
             'docker': {
-                'available': docker_adapter is not None,
+                'available': docker_client is not None,
                 'version': docker_version,
-                'status': 'Connected' if docker_adapter else 'Not available'
+                'status': 'Connected' if docker_client else 'Not available'
             },
             'obs_manager': {
                 'version': '2.0.0',
@@ -1797,7 +1934,7 @@ def debug_rdp_connection(container_name):
     try:
         log_debug(f"Debugging RDP connection for container: {container_name}")
         
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
         
         # Find container by name or instance name
@@ -1809,11 +1946,11 @@ def debug_rdp_connection(container_name):
         
         # Check if XRDP is running
         xrdp_result = container.exec_run('pgrep -f xrdp', user='root', debug_logs=debug_logs)
-        log_debug(f"XRDP process check: exit_code={xrdp_result.exit_code}, output={xrdp_result.output.decode()}")
+        log_debug(f"XRDP process check: exit_code={xrdp_result.exit_code}, output={xrdp_result.output.decode()}, stderr={xrdp_result.stderr.decode()}")
         
         # Check if XRDP-SESMAN is running
         sesman_result = container.exec_run('pgrep -f xrdp-sesman', user='root', debug_logs=debug_logs)
-        log_debug(f"XRDP-SESMAN process check: exit_code={sesman_result.exit_code}, output={sesman_result.output.decode()}")
+        log_debug(f"XRDP-SESMAN process check: exit_code={sesman_result.exit_code}, output={sesman_result.output.decode()}, stderr={sesman_result.stderr.decode()}")
         
         # Check RDP port
         port_result = container.exec_run('netstat -ln | grep :3389', user='root', debug_logs=debug_logs)
@@ -1857,7 +1994,7 @@ def fix_desktop_configuration(container_name):
     try:
         log_debug(f"Fixing desktop configuration for container: {container_name}")
         
-        if not docker_adapter:
+        if not docker_client:
             return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
         
         # Find container by name or instance name
@@ -1871,178 +2008,18 @@ def fix_desktop_configuration(container_name):
         actual_container_name = container.name if hasattr(container, 'name') else container.get('Names', [''])[0]
         log_debug(f"Actual container name: {actual_container_name}")
         
-        # First, check and fix user existence
-        user_check = container.exec_run(
-            'getent passwd developer',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"User check: exit_code={user_check.exit_code}, output={user_check.output.decode()}")
-        
-        # Check if developer group exists
-        group_check = container.exec_run(
-            'getent group developer',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Group check: exit_code={group_check.exit_code}, output={group_check.output.decode()}")
-        
-        # Create developer group if it doesn't exist
-        if group_check.exit_code != 0:
-            create_group = container.exec_run(
-                'groupadd -g 1000 developer',
-                user='root', debug_logs=debug_logs
-            )
-            log_debug(f"Create group: exit_code={create_group.exit_code}, output={create_group.output.decode()}")
-        
-        # Create user if it doesn't exist
-        if user_check.exit_code != 0:
-            create_user = container.exec_run(
-                'useradd -m -s /bin/bash -u 1000 -g developer developer',
-                user='root', debug_logs=debug_logs
-            )
-            log_debug(f"Create user: exit_code={create_user.exit_code}, output={create_user.output.decode()}")
-            
-            # Set password
-            set_pass = container.exec_run(
-                'echo "developer:obs123456789" | chpasswd',
-                user='root', debug_logs=debug_logs
-            )
-            log_debug(f"Set password: exit_code={set_pass.exit_code}")
+        log_debug(f"Calling ensure_user_exists with: {actual_container_name}, developer, obs123")
+        if ensure_user_exists(actual_container_name, 'developer', 'obs123', debug_logs):
+            log_debug("User creation successful")
+            return jsonify({
+                'status': 'success', 
+                'message': f'Desktop configuration fixed successfully for container {container_name}',
+                'debug': debug_logs
+            })
         else:
-            # User exists, check current group and fix if needed
-            current_group = container.exec_run(
-                'id -gn developer',
-                user='root', debug_logs=debug_logs
-            )
-            log_debug(f"Current user group: exit_code={current_group.exit_code}, output={current_group.output.decode()}")
+            log_debug("User creation failed")
+            return jsonify({'status': 'error', 'message': f'Failed to fix desktop configuration for container {container_name}', 'debug': debug_logs}), 500
             
-            # If user is not in developer group, change it
-            if current_group.exit_code == 0 and 'developer' not in current_group.output.decode():
-                # First ensure developer group exists
-                if group_check.exit_code != 0:
-                    create_group = container.exec_run(
-                        'groupadd -g 1000 developer',
-                        user='root', debug_logs=debug_logs
-                    )
-                    log_debug(f"Create group: exit_code={create_group.exit_code}")
-                
-                # Change user's primary group to developer
-                change_group = container.exec_run(
-                    'usermod -g developer developer',
-                    user='root', debug_logs=debug_logs
-                )
-                log_debug(f"Change user group: exit_code={change_group.exit_code}")
-                
-                # Also add user to developer group as secondary group
-                add_to_group = container.exec_run(
-                    'usermod -a -G developer developer',
-                    user='root', debug_logs=debug_logs
-                )
-                log_debug(f"Add user to group: exit_code={add_to_group.exit_code}")
-        
-        # Fix .xsession for developer user
-        xsession_result = container.exec_run(
-            'echo "startlxde" > /home/developer/.xsession && chown developer:developer /home/developer/.xsession && chmod 644 /home/developer/.xsession',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Fixed .xsession: exit_code={xsession_result.exit_code}, output={xsession_result.output.decode()}")
-        
-        # Create LXDE autostart directory
-        mkdir_result = container.exec_run(
-            'mkdir -p /home/developer/.config/lxsession/LXDE/',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Created LXDE directory: exit_code={mkdir_result.exit_code}")
-        
-        # Configure LXDE autostart
-        autostart_result = container.exec_run(
-            'cat > /home/developer/.config/lxsession/LXDE/autostart << "EOF"\n@lxpanel --profile LXDE\n@pcmanfm --desktop --profile LXDE\n@xscreensaver -no-splash\nEOF',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Created autostart: exit_code={autostart_result.exit_code}")
-        
-        # Set proper permissions
-        chown_result = container.exec_run(
-            'chown -R developer:developer /home/developer/.config',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Set permissions: exit_code={chown_result.exit_code}")
-        
-        # Fix XRDP configuration to use Xvnc instead of Xorg
-        xrdp_config_result = container.exec_run(
-            'sed -i "s/name=Xorg/name=Xvnc/g" /etc/xrdp/xrdp.ini && sed -i "s/lib=libxup.so/lib=libvnc.so/g" /etc/xrdp/xrdp.ini',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Fixed XRDP config: exit_code={xrdp_config_result.exit_code}")
-        
-        # Check and fix supervisor configuration
-        supervisor_check = container.exec_run(
-            'cat /etc/supervisor/xrdp.conf',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Supervisor config check: exit_code={supervisor_check.exit_code}")
-        
-        # Kill existing supervisor processes
-        kill_supervisor = container.exec_run(
-            'pkill -f supervisord || true',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Kill supervisor: exit_code={kill_supervisor.exit_code}")
-        
-        # Create necessary directories for XRDP
-        mkdir_xrdp = container.exec_run(
-            'mkdir -p /var/run/xrdp /var/run/xrdp/sockdir /var/log/xrdp',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Create XRDP dirs: exit_code={mkdir_xrdp.exit_code}")
-        
-        # Set proper permissions for XRDP
-        chmod_xrdp = container.exec_run(
-            'chown -R xrdp:xrdp /var/run/xrdp /var/log/xrdp',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Set XRDP permissions: exit_code={chmod_xrdp.exit_code}")
-        
-        # Start supervisor in background and wait
-        supervisor_start = container.exec_run(
-            'nohup supervisord -c /etc/supervisor/xrdp.conf > /dev/null 2>&1 &',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Supervisor start: exit_code={supervisor_start.exit_code}")
-        
-        # Wait for supervisor to start
-        sleep_result = container.exec_run(
-            'sleep 3',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Wait for supervisor: exit_code={sleep_result.exit_code}")
-        
-        # Check supervisor status
-        status_result = container.exec_run(
-            'supervisorctl status || echo "Supervisor not ready yet"',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Supervisor status: exit_code={status_result.exit_code}, output={status_result.output.decode()}")
-        
-        # Wait a bit more for services to start
-        sleep_result2 = container.exec_run(
-            'sleep 5',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Wait for services: exit_code={sleep_result2.exit_code}")
-        
-        # Check if services are running
-        service_check = container.exec_run(
-            'pgrep -f "xrdp\|xrdp-sesman"',
-            user='root', debug_logs=debug_logs
-        )
-        log_debug(f"Service check: exit_code={service_check.exit_code}, output={service_check.output.decode()}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Desktop configuration fixed successfully',
-            'debug': debug_logs
-        })
-        
     except Exception as e:
         log_debug(f"Exception in fix_desktop_configuration: {e}")
         return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
@@ -2064,11 +2041,11 @@ def create_user_in_container(container_name):
         
         log_debug(f"User: {user}, Password: {password}")
         
-        if not docker_adapter:
-            log_debug("docker_adapter not available")
+        if not docker_client:
+            log_debug("docker_client not available")
             return jsonify({'status': 'error', 'message': 'Docker client not available', 'debug': debug_logs}), 503
         
-        log_debug(f"docker_adapter available, searching for container: {container_name}")
+        log_debug(f"docker_client available, searching for container: {container_name}")
         
         # Find container by name or instance name
         container = find_container_by_name_or_instance(container_name, debug_logs)

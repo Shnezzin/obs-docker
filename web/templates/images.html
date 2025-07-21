@@ -1,0 +1,537 @@
+{% extends "base.html" %}
+
+{% block title %}Docker Images - OBS Docker Manager{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">
+            <i class="fas fa-box me-2"></i>Docker Images
+        </h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#pullImageModal">
+                <i class="fas fa-download me-1"></i> Pull Image
+            </button>
+        </div>
+    </div>
+
+    <!-- Image Search and Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                        <input type="text" id="imageSearch" class="form-control" placeholder="Search local images...">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <input type="text" id="dockerHubSearch" class="form-control" placeholder="Search Docker Hub...">
+                        <button class="btn btn-outline-secondary" type="button" id="searchDockerHubBtn">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Docker Hub Search Results -->
+    <div class="card mb-4 d-none" id="dockerHubResults">
+        <div class="card-header">
+            <i class="fas fa-cloud me-1"></i> Docker Hub Results
+            <button type="button" class="btn-close float-end" id="closeDockerHubResults"></button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="dockerHubTable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Stars</th>
+                            <th>Official</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dockerHubResultsBody">
+                        <!-- Results will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Local Images -->
+    <div class="card">
+        <div class="card-header">
+            <i class="fas fa-hdd me-1"></i> Local Images
+            <button class="btn btn-sm btn-outline-secondary float-end" id="refreshImagesBtn">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="imagesTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Tags</th>
+                            <th>Size</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="imagesTableBody">
+                        <!-- Images will be loaded by JavaScript -->
+                        <tr>
+                            <td colspan="5" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">Loading images...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pull Image Modal -->
+<div class="modal fade" id="pullImageModal" tabindex="-1" aria-labelledby="pullImageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pullImageModalLabel">
+                    <i class="fas fa-download me-2"></i>Pull Docker Image
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="pullImageForm">
+                    <div class="mb-3">
+                        <label for="imageName" class="form-label">Image Name</label>
+                        <div class="input-group">
+                            <span class="input-group-text">docker.io/library/</span>
+                            <input type="text" class="form-control" id="imageName" 
+                                   placeholder="e.g., nginx, ubuntu, postgres" required>
+                        </div>
+                        <div class="form-text">
+                            Format: [registry/]repository[:tag] or [registry/]repository[@digest]
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="imageTag" class="form-label">Tag</label>
+                        <input type="text" class="form-control" id="imageTag" value="latest" placeholder="latest">
+                    </div>
+                </form>
+                <div class="progress d-none" id="pullProgress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="pullStatus" class="mt-3 small text-muted"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="pullImageBtn">
+                    <i class="fas fa-download me-1"></i> Pull Image
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Details Modal -->
+<div class="modal fade" id="imageDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle me-2"></i>Image Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="imageDetailsBody">
+                <!-- Content will be loaded by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    $(document).ready(function() {
+        // Initialize DataTable for local images
+        const imagesTable = $('#imagesTable').DataTable({
+            ajax: {
+                url: '/api/images',
+                dataSrc: 'data',
+                error: function(xhr, error, thrown) {
+                    console.error('Error loading images:', error);
+                    showToast('Error loading images: ' + (xhr.responseJSON?.message || 'Unknown error'), 'danger');
+                }
+            },
+            columns: [
+                { data: 'id', width: '15%' },
+                { 
+                    data: 'tags',
+                    render: function(data, type, row) {
+                        if (!data || !data.length) return '<span class="text-muted">&lt;none&gt;</span>';
+                        return data.map(tag => 
+                            `<span class="badge bg-secondary me-1 mb-1">${tag}</span>`
+                        ).join('');
+                    },
+                    width: '35%'
+                },
+                { 
+                    data: 'size_mb',
+                    render: function(data, type, row) {
+                        return `${data} MB`;
+                    },
+                    width: '15%'
+                },
+                { 
+                    data: 'created',
+                    width: '20%'
+                },
+                {
+                    data: 'id',
+                    orderable: false,
+                    render: function(data, type, row) {
+                        return `
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info btn-sm view-image" 
+                                        data-id="${data}" 
+                                        title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="btn btn-outline-danger btn-sm delete-image" 
+                                        data-id="${data}"
+                                        data-tags="${row.tags ? row.tags.join(',') : ''}"
+                                        title="Remove Image">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        `;
+                    },
+                    width: '15%'
+                }
+            ],
+            order: [[2, 'desc']], // Sort by size by default
+            responsive: true,
+            pageLength: 25,
+            lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, "All"]]
+        });
+
+        // Search local images
+        $('#imageSearch').on('keyup', function() {
+            imagesTable.search(this.value).draw();
+        });
+
+        // Refresh images
+        $('#refreshImagesBtn').on('click', function() {
+            imagesTable.ajax.reload();
+            showToast('Images refreshed', 'success');
+        });
+
+        // Search Docker Hub
+        $('#searchDockerHubBtn, #dockerHubSearch').on('keypress', function(e) {
+            if (e.which === 13 || $(this).is('button')) {
+                const query = $('#dockerHubSearch').val().trim();
+                if (!query) return;
+                
+                const $btn = $('#searchDockerHubBtn');
+                const $icon = $btn.find('i');
+                const $results = $('#dockerHubResults');
+                const $resultsBody = $('#dockerHubResultsBody');
+                
+                $btn.prop('disabled', true);
+                $icon.removeClass('fa-search').addClass('fa-spinner fa-spin');
+                
+                $.get('/api/images/search', { q: query })
+                    .done(function(response) {
+                        if (response.status === 'success') {
+                            $resultsBody.empty();
+                            
+                            if (response.data && response.data.length > 0) {
+                                response.data.forEach(function(image) {
+                                    const row = `
+                                        <tr>
+                                            <td>${image.name}</td>
+                                            <td>${image.description || '<span class="text-muted">No description</span>'}</td>
+                                            <td>${image.stars} <i class="fas fa-star text-warning"></i></td>
+                                            <td>${image.official ? '<span class="badge bg-success">Official</span>' : ''}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary pull-image" 
+                                                        data-image="${image.name}">
+                                                    <i class="fas fa-download me-1"></i> Pull
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `;
+                                    $resultsBody.append(row);
+                                });
+                                $results.removeClass('d-none');
+                            } else {
+                                $resultsBody.html('<tr><td colspan="5" class="text-center">No results found</td></tr>');
+                                $results.removeClass('d-none');
+                            }
+                        } else {
+                            showToast(response.message || 'Error searching Docker Hub', 'danger');
+                        }
+                    })
+                    .fail(function(xhr) {
+                        const error = xhr.responseJSON || {};
+                        showToast(error.message || 'Error searching Docker Hub', 'danger');
+                    })
+                    .always(function() {
+                        $btn.prop('disabled', false);
+                        $icon.removeClass('fa-spinner fa-spin').addClass('fa-search');
+                    });
+            }
+        });
+
+        // Close Docker Hub results
+        $('#closeDockerHubResults').on('click', function() {
+            $('#dockerHubResults').addClass('d-none');
+        });
+
+        // Pull image from Docker Hub results
+        $(document).on('click', '.pull-image', function() {
+            const imageName = $(this).data('image');
+            $('#imageName').val(imageName);
+            $('#pullImageModal').modal('show');
+        });
+
+        // Pull image from form
+        $('#pullImageBtn').on('click', function() {
+            const $btn = $(this);
+            const $form = $('#pullImageForm');
+            const $progress = $('#pullProgress');
+            const $status = $('#pullStatus');
+            
+            if (!form.checkValidity()) {
+                $form.addClass('was-validated');
+                return;
+            }
+            
+            const imageName = $('#imageName').val().trim();
+            const imageTag = $('#imageTag').val().trim() || 'latest';
+            const fullImage = imageTag ? `${imageName}:${imageTag}` : imageName;
+            
+            $btn.prop('disabled', true);
+            $status.html(`<i class="fas fa-spinner fa-spin"></i> Pulling ${fullImage}...`);
+            $progress.removeClass('d-none').find('.progress-bar').css('width', '0%');
+            
+            // Start pulling the image
+            $.ajax({
+                url: '/api/images/pull',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    image: imageName,
+                    tag: imageTag
+                }),
+                success: function(response) {
+                    if (response.status === 'pending') {
+                        // Poll for completion
+                        const pollInterval = setInterval(function() {
+                            imagesTable.ajax.reload(function() {
+                                // Check if the image was pulled successfully
+                                const imageExists = imagesTable.rows().data().toArray()
+                                    .some(img => img.tags && img.tags.includes(fullImage));
+                                
+                                if (imageExists) {
+                                    clearInterval(pollInterval);
+                                    $status.html(`<span class="text-success"><i class="fas fa-check-circle"></i> Successfully pulled ${fullImage}</span>`);
+                                    $btn.prop('disabled', false);
+                                    showToast(`Successfully pulled ${fullImage}`, 'success');
+                                }
+                            });
+                        }, 2000);
+                        
+                        // Timeout after 5 minutes
+                        setTimeout(function() {
+                            clearInterval(pollInterval);
+                            $status.html(`<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> Pull timed out. Check server logs for details.</span>`);
+                            $btn.prop('disabled', false);
+                        }, 300000);
+                        
+                        // Close modal after a short delay
+                        setTimeout(function() {
+                            $('#pullImageModal').modal('hide');
+                            // Reset form after modal is hidden
+                            $('#pullImageModal').on('hidden.bs.modal', function() {
+                                $form[0].reset();
+                                $form.removeClass('was-validated');
+                                $progress.addClass('d-none');
+                                $status.empty();
+                            });
+                        }, 2000);
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON || {};
+                    $status.html(`<span class="text-danger"><i class="fas fa-times-circle"></i> Error: ${error.message || 'Failed to pull image'}</span>`);
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
+
+        // View image details
+        $(document).on('click', '.view-image', function() {
+            const imageId = $(this).data('id');
+            const $modal = $('#imageDetailsModal');
+            const $modalBody = $('#imageDetailsBody');
+            
+            $modalBody.html(`
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading image details...</p>
+                </div>
+            `);
+            
+            $modal.modal('show');
+            
+            // Get image details
+            $.get(`/api/images/${imageId}`)
+                .done(function(response) {
+                    if (response.status === 'success') {
+                        const image = response.data;
+                        let html = `
+                            <div class="row">
+                                <div class="col-md-4 fw-bold">ID:</div>
+                                <div class="col-md-8">
+                                    <code>${image.id}</code>
+                                    <button class="btn btn-sm btn-outline-secondary ms-2 copy-btn" 
+                                            data-bs-toggle="tooltip" 
+                                            title="Copy to clipboard"
+                                            data-clipboard-text="${image.id}">
+                                        <i class="far fa-copy"></i>
+                                    </button>
+                                </div>
+                                
+                                <div class="col-md-4 fw-bold mt-2">Tags:</div>
+                                <div class="col-md-8 mt-2">
+                                    ${image.tags && image.tags.length ? 
+                                        image.tags.map(tag => 
+                                            `<span class="badge bg-secondary me-1 mb-1">${tag}</span>`
+                                        ).join('') : 
+                                        '<span class="text-muted">&lt;none&gt;</span>'
+                                    }
+                                </div>
+                                
+                                <div class="col-md-4 fw-bold mt-2">Size:</div>
+                                <div class="col-md-8 mt-2">${image.size_mb} MB</div>
+                                
+                                <div class="col-md-4 fw-bold mt-2">Virtual Size:</div>
+                                <div class="col-md-8 mt-2">${image.virtual_size} MB</div>
+                                
+                                <div class="col-md-4 fw-bold mt-2">Created:</div>
+                                <div class="col-md-8 mt-2">${image.created}</div>
+                                
+                                <div class="col-md-4 fw-bold mt-2">Labels:</div>
+                                <div class="col-md-8 mt-2">
+                        `;
+                        
+                        if (image.labels && Object.keys(image.labels).length > 0) {
+                            html += '<div class="table-responsive"><table class="table table-sm table-bordered">';
+                            for (const [key, value] of Object.entries(image.labels)) {
+                                html += `
+                                    <tr>
+                                        <th style="width: 30%;">${key}</th>
+                                        <td>${value}</td>
+                                    </tr>
+                                `;
+                            }
+                            html += '</table></div>';
+                        } else {
+                            html += '<span class="text-muted">No labels</span>';
+                        }
+                        
+                        html += '</div></div>';
+                        $modalBody.html(html);
+                        
+                        // Initialize tooltips
+                        $('[data-bs-toggle="tooltip"]').tooltip();
+                        
+                        // Initialize clipboard.js
+                        new ClipboardJS('.copy-btn');
+                    } else {
+                        $modalBody.html(`
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                ${response.message || 'Failed to load image details'}
+                            </div>
+                        `);
+                    }
+                })
+                .fail(function(xhr) {
+                    const error = xhr.responseJSON || {};
+                    $modalBody.html(`
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            ${error.message || 'Error loading image details'}
+                        </div>
+                    `);
+                });
+        });
+
+        // Delete image
+        $(document).on('click', '.delete-image', function() {
+            const imageId = $(this).data('id');
+            const imageTags = $(this).data('tags') || 'untagged image';
+            
+            bootbox.confirm({
+                title: '<i class="fas fa-exclamation-triangle text-danger me-2"></i>Confirm Deletion',
+                message: `Are you sure you want to remove the following image?<br><br>
+                         <strong>ID:</strong> ${imageId}<br>
+                         <strong>Tags:</strong> ${imageTags || '<span class="text-muted">&lt;none&gt;</span>'}`,
+                buttons: {
+                    confirm: {
+                        label: 'Yes, remove it',
+                        className: 'btn-danger'
+                    },
+                    cancel: {
+                        label: 'Cancel',
+                        className: 'btn-secondary'
+                    }
+                },
+                callback: function(result) {
+                    if (result) {
+                        $.ajax({
+                            url: `/api/images/${imageId}/remove`,
+                            method: 'DELETE',
+                            success: function(response) {
+                                if (response.status === 'success') {
+                                    showToast('Image removed successfully', 'success');
+                                    imagesTable.ajax.reload();
+                                } else {
+                                    showToast(response.message || 'Failed to remove image', 'danger');
+                                }
+                            },
+                            error: function(xhr) {
+                                const error = xhr.responseJSON || {};
+                                showToast(error.message || 'Error removing image', 'danger');
+                            }
+                        });
+                    }
+                }
+            });
+        });
+
+        // Initialize clipboard.js
+        new ClipboardJS('.copy-btn');
+    });
+</script>
+{% endblock %}

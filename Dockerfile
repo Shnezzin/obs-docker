@@ -8,23 +8,154 @@ ARG ENABLE_GPU=false
 ARG ADDITIONAL_APT_GET_OPTS="--no-install-recommends"
 
 # Build stage for su-exec utility
-FROM ubuntu:${UBUNTU_VERSION} as build
+FROM ubuntu:${UBUNTU_VERSION} as suexec
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y make gcc \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       make \
+       gcc \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /opt/su-exec
-COPY su-exec.c /opt/su-exec/
-COPY Makefile /opt/su-exec/
+WORKDIR /opt/su-exec
+COPY su-exec.c Makefile ./
 
-RUN cd /opt/su-exec \
-    && make
+RUN make \
+    && chmod +x su-exec
 
-####################################
+# Build stage for Python dependencies
+FROM python:3.11-slim as python-base
 
-# Main image
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100 \
+    POETRY_VERSION=1.6.1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1
+
+# Install Poetry
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && curl -sSL https://install.python-poetry.org | python3 - \
+    && chmod +x /opt/poetry/bin/poetry \
+    && ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy only requirements to cache them in docker layer
+COPY web/pyproject.toml web/poetry.lock* ./
+
+# Install runtime dependencies
+RUN poetry install --no-dev --no-root
+
+# Final stage
 FROM ubuntu:${UBUNTU_VERSION}
+
+# Set build arguments
+ARG OBS_VERSION=31.1.1
+ARG UBUNTU_VERSION=24.04
+ARG LOCALE=en_US.UTF-8
+ARG TIMEZONE=UTC
+ARG DESKTOP_ENV=lxde
+ARG ENABLE_GPU=false
+ARG USERNAME=developer
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=${LOCALE} \
+    LANGUAGE=${LOCALE%.*}:en \
+    LC_ALL=${LOCALE} \
+    TZ=${TIMEZONE} \
+    HOME=/home/${USERNAME} \
+    PATH="/home/${USERNAME}/.local/bin:${PATH}" \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Base packages
+    sudo \
+    curl \
+    wget \
+    gnupg2 \
+    ca-certificates \
+    tzdata \
+    locales \
+    # OBS dependencies
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    libxtst6 \
+    libpulse0 \
+    libgl1-mesa-dri \
+    libgl1-mesa-glx \
+    libpci3 \
+    # Desktop environment
+    lxde-core \
+    lxterminal \
+    lxappearance \
+    xrdp \
+    xorgxrdp \
+    # Development tools
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/* \
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
+
+# Configure timezone and locale
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && update-locale LANG=$LANG LC_ALL=$LC_ALL LANGUAGE=$LANGUAGE
+
+# Create non-root user and setup permissions
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME \
+    && mkdir -p /home/$USERNAME/.local/bin \
+    && chown -R $USERNAME:$USERNAME /home/$USERNAME
+
+# Copy su-exec from build stage
+COPY --from=suexec /opt/su-exec/su-exec /usr/local/bin/su-exec
+
+# Copy Python dependencies from python-base
+COPY --from=python-base /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python-base /usr/local/bin /usr/local/bin
+
+# Set up application directory
+WORKDIR /app
+
+# Copy application code
+COPY . .
+
+# Set up volumes and permissions
+RUN mkdir -p /opt/obs-config /opt/obs-instances /opt/obs-backups \
+    && chown -R $USERNAME:$USERNAME /opt/obs-* \
+    && chmod +x /app/docker-entrypoint.sh /app/docker-entrypoint-vnc.sh
+
+# Switch to non-root user
+USER $USERNAME
+
+# Expose ports
+EXPOSE 8080 3389 5900
+
+# Set entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # Copy build arguments to environment for runtime access
 ARG LOCALE
@@ -80,9 +211,6 @@ RUN echo "path-include=/usr/share/locale/${LOCALE%.*}/LC_MESSAGES/*.mo" > /etc/d
          "gnome") apt-get install -y gnome-session gnome-terminal ;; \
          *) apt-get install -y lxde ;; \
        esac
-
-COPY --from=build \
-    /opt/su-exec/su-exec /usr/sbin/su-exec
 
 # Set timezone and locale dynamically
 RUN rm -f /etc/localtime \
