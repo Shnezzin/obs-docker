@@ -51,14 +51,14 @@ services:
       retries: 3
       start_period: 40s
     command: >
-      sh -c "mkdir -p /app/ssl && \
-      openssl req -x509 -newkey rsa:4096 -nodes -out $${SSL_CERT_PATH} -keyout $${SSL_KEY_PATH} \
-      -days $${SSL_CERT_DAYS} -subj \"/C=$${SSL_CERT_COUNTRY}/ST=$${SSL_CERT_STATE}/L=$${SSL_CERT_CITY}/O=$${SSL_CERT_ORG}/CN=$${SSL_CERT_CN}" && \
-      gunicorn --worker-class eventlet -w 1 \
-      -b 0.0.0.0:8080 \
-      -b 0.0.0.0:8443 --certfile=$${SSL_CERT_PATH} --keyfile=$${SSL_KEY_PATH} \
-      --access-logfile - --error-logfile - \
-      app:app"
+      sh -c 'mkdir -p /app/ssl &&
+      openssl req -x509 -newkey rsa:4096 -nodes -out /app/ssl/cert.pem -keyout /app/ssl/key.pem
+      -days 365 -subj "/C=DE/ST=NRW/L=Koeln/O=OBS-Docker/CN=localhost" &&
+      gunicorn --worker-class eventlet -w 1
+      -b 0.0.0.0:8080
+      -b 0.0.0.0:8443 --certfile=/app/ssl/cert.pem --keyfile=/app/ssl/key.pem
+      --access-logfile - --error-logfile -
+      app:app'
     labels:
       - "com.obs-docker.service=web-manager"
       - "com.obs-docker.version=2.0.0"
