@@ -77,69 +77,35 @@ if ! sudo chmod u-s /usr/sbin/useradd /usr/sbin/groupadd; then
     log "WARNING: Failed to revert SUID permissions"
 fi
 
-if (( $# == 0 )); then
-    # Set login user name
-    log "Configuring RDP access for user: $USER"
+# Nach User-/Gruppenhandling:
+HOME=/home/$USER
+export HOME
 
-    # Set login password
-    log "Setting user password"
-    if ! echo "${USER}:${PASSWD}" | sudo chpasswd; then
-        log "WARNING: Failed to set password for user $USER (may already be set)"
-    else
-        log "Password set successfully for user $USER"
-    fi
+# Ensure .xsession exists and is correct
+if [[ ! -e $HOME/.xsession ]]; then
+    cp /etc/skel/.xsession $HOME/.xsession 2>/dev/null || echo "startlxde" > $HOME/.xsession
+fi
+echo "startlxde" > $HOME/.xsession
+chown $USER:$GROUP $HOME/.xsession
+chmod 644 $HOME/.xsession
 
-    # Setup user environment
-    log "Setting up user environment"
-    
-    # Check if user exists and get correct user info
-    if getent passwd ${USER} >/dev/null 2>&1; then
-        USER_UID=$(id -u ${USER} 2>/dev/null || echo "1000")
-        USER_GID=$(id -g ${USER} 2>/dev/null || echo "1000")
-        log "User ${USER} exists with UID: ${USER_UID}, GID: ${USER_GID}"
-    else
-        log "WARNING: User ${USER} does not exist, skipping environment setup"
-        USER_UID="1000"
-        USER_GID="1000"
-    fi
-    
-    # Ensure .xsession exists and is correct
-    if [[ ! -e ${HOME}/.xsession ]]; then
-        cp /etc/skel/.xsession ${HOME}/.xsession 2>/dev/null || echo "startlxde" > ${HOME}/.xsession
-    fi
-    
-    # Force correct .xsession content for LXDE
-    echo "startlxde" > ${HOME}/.xsession
-    
-    # Set proper permissions (only if user exists)
-    if getent passwd ${USER} >/dev/null 2>&1; then
-        chown ${USER}:${GROUP} ${HOME}/.xsession 2>/dev/null || log "WARNING: Could not set ownership of .xsession"
-        chmod 644 ${HOME}/.xsession
-    fi
-    
-    # Create LXDE autostart directory
-    mkdir -p ${HOME}/.config/lxsession/LXDE/
-    
-    # Configure LXDE autostart
-    cat > ${HOME}/.config/lxsession/LXDE/autostart << 'EOF'
+# Create LXDE autostart directory
+mkdir -p $HOME/.config/lxsession/LXDE/
+cat > $HOME/.config/lxsession/LXDE/autostart << 'EOF'
 @lxpanel --profile LXDE
 @pcmanfm --desktop --profile LXDE
 @xscreensaver -no-splash
 EOF
-    
-    # Set proper permissions for autostart (only if user exists)
-    if getent passwd ${USER} >/dev/null 2>&1; then
-        chown -R ${USER}:${GROUP} ${HOME}/.config 2>/dev/null || log "WARNING: Could not set ownership of .config"
-        chmod -R 755 ${HOME}/.config
-    fi
-    
-    # Generate RDP keys if needed
-    log "Checking RDP keys"
-    [[ ! -e /etc/xrdp/rsakeys.ini ]] && \
-        sudo -u xrdp -g xrdp xrdp-keygen xrdp /etc/xrdp/rsakeys.ini > /dev/null 2>&1
+chown -R $USER:$GROUP $HOME/.config
+chmod -R 755 $HOME/.config
 
-    # Configure XRDP for better desktop support
-    log "Configuring XRDP for LXDE"
+# Generate RDP keys if needed
+log "Checking RDP keys"
+[[ ! -e /etc/xrdp/rsakeys.ini ]] && \
+    sudo -u xrdp -g xrdp xrdp-keygen xrdp /etc/xrdp/rsakeys.ini > /dev/null 2>&1
+
+# Configure XRDP for better desktop support
+log "Configuring XRDP for LXDE"
     
     # Backup original XRDP config
     cp /etc/xrdp/xrdp.ini /etc/xrdp/xrdp.ini.backup
