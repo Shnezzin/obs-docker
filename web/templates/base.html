@@ -167,8 +167,8 @@
 
     <!-- Toast container for notifications -->
     <div class="toast-container"></div>
-
-    <script>
+    
+    <script nonce="{{ csp_nonce() }}">
         // Global configuration
         const CONFIG = {
             API_BASE_URL: '{{ url_for("api_instances") }}'.replace('/instances', ''),
