@@ -12,16 +12,32 @@ import time
 import secrets
 from functools import wraps
 from datetime import datetime, timezone, timedelta
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, abort
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, send_from_directory, Response, g
+from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
-from flask_wtf.csrf import CSRFProtect, generate_csrf
-from flask_httpauth import HTTPBasicAuth
-from flask_socketio import SocketIO
+from functools import wraps
+import docker
+import json
+import os
+import subprocess
+import signal
+import time
+import secrets
+import logging
+import psutil
+from datetime import datetime, timedelta
+import re
+import shutil
+import tarfile
+import io
+import threading
+import sys
+import traceback
+from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
-import docker
 import psutil
 
 # Load environment variables from .env file
@@ -35,19 +51,14 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max upload size
     UPLOAD_FOLDER='/tmp/uploads',
     ALLOWED_EXTENSIONS={'zip', 'tar', 'gz'},
-    ADMIN_USERNAME=os.environ.get('ADMIN_USERNAME', 'admin'),
-    ADMIN_PASSWORD_HASH=os.environ.get('ADMIN_PASSWORD_HASH', generate_password_hash('changeme')),  # Must be changed in production
     RATE_LIMIT=os.environ.get('RATE_LIMIT', '200 per day;50 per hour'),
     CSRF_ENABLED=os.environ.get('CSRF_ENABLED', 'True').lower() == 'true'
 )
 
-# Initialize security extensions
-csrf = CSRFProtect(app)
-auth = HTTPBasicAuth()
+# Initialize rate limiting
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
@@ -66,104 +77,26 @@ csp = {
 # Check if we're in development mode
 debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
 
+# Initialize Talisman with appropriate settings
 talisman = Talisman(
     app,
-    force_https=not debug_mode,  # Only force HTTPS in production
-    strict_transport_security=not debug_mode,  # Only use HSTS in production
-    session_cookie_secure=not debug_mode,  # Only secure cookies in production
     content_security_policy=csp,
     content_security_policy_nonce_in=['script-src'],
-    referrer_policy='strict-origin-when-cross-origin',
-    permissions_policy={
-        'geolocation': '()',
-        'camera': '()',
-        'microphone': '()',
-        'payment': '()',
-    }
+    force_https=not debug_mode,  # Only force HTTPS in production
+    strict_transport_security=True,
+    session_cookie_secure=not debug_mode,  # Only secure in production
+    force_https_permanent=False
 )
 
-# Initialize SocketIO with CSRF protection
+# Initialize SocketIO
 socketio = SocketIO(
     app,
-    cors_allowed_origins=os.environ.get('ALLOWED_ORIGINS', '').split(','),
     async_mode='eventlet',
-    ping_timeout=30,
-    ping_interval=25,
-    max_http_buffer_size=10 * 1024 * 1024  # 10MB
+    cors_allowed_origins=[],
+    logger=debug_mode,
+    engineio_logger=debug_mode,
+    manage_session=False
 )
-
-# Authentication
-@auth.verify_password
-def verify_password(username, password):
-    if username == app.config['ADMIN_USERNAME'] and \
-       check_password_hash(app.config['ADMIN_PASSWORD_HASH'], password):
-        return username
-
-# Require authentication for all API endpoints
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('logged_in'):
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'error': 'Unauthorized'}), 401
-            return redirect(url_for('login', next=request.url))
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.before_request
-def before_request():
-    # Enforce HTTPS in production
-    if not request.is_secure and app.env == 'production':
-        url = request.url.replace('http://', 'https://', 1)
-        code = 301
-        return redirect(url, code=code)
-    
-    # Set session timeout
-    session.permanent = True
-    app.permanent_session_lifetime = app.config['PERMANENT_SESSION_LIFETIME']
-
-# Error handlers
-@app.errorhandler(400)
-def bad_request(e):
-    return render_template('error.html', error='Bad Request', code=400), 400
-
-@app.errorhandler(401)
-def unauthorized(e):
-    return render_template('error.html', error='Unauthorized', code=401), 401
-
-@app.errorhandler(403)
-def forbidden(e):
-    return render_template('error.html', error='Forbidden', code=403), 403
-
-@app.errorhandler(404)
-def not_found(e):
-    return render_template('error.html', error='Not Found', code=404), 404
-
-@app.errorhandler(413)
-def request_entity_too_large(e):
-    return render_template('error.html', error='File too large', code=413), 413
-
-@app.errorhandler(429)
-def ratelimit_handler(e):
-    return render_template('error.html', error='Rate limit exceeded', code=429), 429
-
-@app.errorhandler(500)
-def internal_server_error(e):
-    app.logger.error(f'Server Error: {e}', exc_info=True)
-    return render_template('error.html', error='Internal Server Error', code=500), 500
-
-# Helper functions
-def validate_input(input_str, max_length=100, allowed_chars=None):
-    """Validate and sanitize user input"""
-    if not input_str or len(input_str) > max_length:
-        return False
-    if allowed_chars and not all(c in allowed_chars for c in input_str):
-        return False
-    return input_str.strip()
-
-def sanitize_filename(filename):
-    """Sanitize filename to prevent path traversal"""
-    return os.path.basename(filename)
 
 # Docker client with enhanced error handling and diagnostics
 try:
