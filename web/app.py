@@ -70,38 +70,36 @@ csp = {
     'default-src': ["'self'"],
     'script-src': [
         "'self'",
-        'https://code.jquery.com',
-        'https://cdn.jsdelivr.net',
-        'https://cdnjs.cloudflare.com',
-        'https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js',
-        'https://cdn.jsdelivr.net/npm/chart.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js',
         "'unsafe-inline'",
-        "'strict-dynamic'"
+        "'strict-dynamic'",
+        'https:',
+        'http:'
     ],
     'style-src': [
         "'self'",
-        'https://cdn.jsdelivr.net',
-        'https://cdnjs.cloudflare.com',
-        'https://fonts.googleapis.com',
-        "'unsafe-inline'"
+        "'unsafe-inline'",
+        'https:',
+        'http:'
     ],
     'img-src': [
         "'self'",
         'data:',
         'blob:',
-        'https:'
+        'https:',
+        'http:'
     ],
     'font-src': [
         "'self'",
-        'https://cdnjs.cloudflare.com',
-        'https://fonts.gstatic.com',
-        'data:'
+        'data:',
+        'https:',
+        'http:'
     ],
     'connect-src': [
         "'self'",
         'ws:',
-        'wss:'
+        'wss:',
+        'https:',
+        'http:'
     ],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
