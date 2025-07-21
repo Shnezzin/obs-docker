@@ -2175,6 +2175,38 @@ def remove_image(image_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/system/containers')
+def api_system_containers():
+    """System API endpoint for container information (compatibility)"""
+    return api_containers()
+
+@app.route('/api/system/images')
+def api_system_images():
+    """System API endpoint for Docker images (compatibility)"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+    
+    try:
+        images = docker_client.images.list(all=True)
+        images_data = []
+        
+        for img in images:
+            tags = img.tags if img.tags else ['<none>:<none>']
+            created = img.attrs.get('Created', 'N/A')
+            size_mb = round(img.attrs.get('Size', 0) / (1024 * 1024), 2)
+            
+            images_data.append({
+                'id': img.short_id.split(':')[-1][:12],
+                'tags': tags,
+                'created': created,
+                'size_mb': size_mb,
+                'full_id': img.id
+            })
+        
+        return jsonify({'status': 'success', 'images': images_data})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 if __name__ == '__main__':
     # Ensure required directories exist
     os.makedirs('/opt/obs-config', exist_ok=True)
