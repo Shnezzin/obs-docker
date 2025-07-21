@@ -18,6 +18,7 @@ from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_httpauth import HTTPBasicAuth
+from flask_socketio import SocketIO
 from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 import docker
@@ -1945,11 +1946,11 @@ def debug_rdp_connection(container_name):
         log_debug("Container found, checking RDP services...")
         
         # Check if XRDP is running
-        xrdp_result = container.exec_run('pgrep -f xrdp', user='root', debug_logs=debug_logs)
+        xrdp_result = container.exec_run(f'pgrep -f xrdp', user='root', debug_logs=debug_logs)
         log_debug(f"XRDP process check: exit_code={xrdp_result.exit_code}, output={xrdp_result.output.decode()}, stderr={xrdp_result.stderr.decode()}")
         
         # Check if XRDP-SESMAN is running
-        sesman_result = container.exec_run('pgrep -f xrdp-sesman', user='root', debug_logs=debug_logs)
+        sesman_result = container.exec_run(f'pgrep -f xrdp-sesman', user='root', debug_logs=debug_logs)
         log_debug(f"XRDP-SESMAN process check: exit_code={sesman_result.exit_code}, output={sesman_result.output.decode()}, stderr={sesman_result.stderr.decode()}")
         
         # Check RDP port
