@@ -7,10 +7,6 @@
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <style>
         .sidebar {
@@ -23,23 +19,12 @@
         }
         .nav-link {
             color: rgba(255,255,255,0.8);
-            padding: 0.5rem 1rem;
-            margin: 0.1rem 0;
-            border-radius: 0.25rem;
-            transition: all 0.2s;
         }
         .nav-link:hover, .nav-link.active {
             color: white;
-            background-color: rgba(255,255,255,0.15);
-            transform: translateX(3px);
-        }
-        .nav-link i {
-            width: 1.25rem;
-            text-align: center;
-            margin-right: 0.5rem;
+            background-color: rgba(255,255,255,0.1);
         }
     </style>
-    {% block extra_css %}{% endblock %}
 </head>
 <body>
     <div class="container-fluid">
@@ -52,49 +37,49 @@
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" 
                                href="{{ url_for('dashboard') }}">
-                                <i class="fas fa-tachometer-alt"></i>Dashboard
+                                <i class="fas fa-tachometer-alt me-2"></i>Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'instances' %}active{% endif %}" 
                                href="{{ url_for('instances') }}">
-                                <i class="fas fa-cube"></i>Instances
+                                <i class="fas fa-cube me-2"></i>Instances
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'containers' %}active{% endif %}" 
                                href="{{ url_for('containers') }}">
-                                <i class="fas fa-box"></i>Containers
+                                <i class="fas fa-box me-2"></i>Containers
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'images' %}active{% endif %}" 
                                href="{{ url_for('images') }}">
-                                <i class="fas fa-images"></i>Images
+                                <i class="fas fa-images me-2"></i>Images
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'plugins' %}active{% endif %}" 
                                href="{{ url_for('plugins') }}">
-                                <i class="fas fa-puzzle-piece"></i>Plugins
+                                <i class="fas fa-puzzle-piece me-2"></i>Plugins
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'monitoring' %}active{% endif %}" 
                                href="{{ url_for('monitoring') }}">
-                                <i class="fas fa-chart-line"></i>Monitoring
+                                <i class="fas fa-chart-line me-2"></i>Monitoring
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'backups' %}active{% endif %}" 
                                href="{{ url_for('backups') }}">
-                                <i class="fas fa-save"></i>Backups
+                                <i class="fas fa-save me-2"></i>Backups
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" 
                                href="{{ url_for('settings') }}">
-                                <i class="fas fa-cog"></i>Settings
+                                <i class="fas fa-cog me-2"></i>Settings
                             </a>
                         </li>
                     </ul>
@@ -107,10 +92,7 @@
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         {% for category, message in messages %}
-                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                            </div>
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
                         {% endfor %}
                     {% endif %}
                 {% endwith %}
@@ -122,7 +104,7 @@
     </div>
 
     <!-- Loading indicator -->
-    <div id="loading" class="position-fixed top-0 end-0 p-3" style="display: none; z-index: 9999;">
+    <div id="loading" class="position-fixed top-0 end-0 p-3" style="display: none;">
         <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -153,11 +135,6 @@
             $('#loading').hide();
         });
 
-        // Initialize tooltips
-        $(function () {
-            $('[data-bs-toggle="tooltip"]').tooltip();
-        });
-
         // Simple toast function
         function showToast(message, type = 'info') {
             const toast = `
@@ -170,16 +147,15 @@
             `;
             
             $('.toast-container').append(toast);
-            const toastElement = $('.toast').last();
-            const toastInstance = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
-            toastInstance.show();
+            $('.toast').toast({ autohide: true, delay: 5000 });
+            $('.toast').toast('show');
             
-            toastElement.on('hidden.bs.toast', function () {
+            $('.toast').on('hidden.bs.toast', function () {
                 $(this).remove();
             });
         }
     </script>
     
-    {% block extra_js %}{% endblock %}
+    {% block scripts %}{% endblock %}
 </body>
 </html>

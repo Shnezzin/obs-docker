@@ -2044,6 +2044,137 @@ def create_user_in_container(container_name):
         log_debug(f"Exception in create_user_in_container: {e}")
         return jsonify({'status': 'error', 'message': str(e), 'debug': debug_logs}), 500
 
+@app.route('/images')
+def images():
+    """Docker images management page"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+    
+    try:
+        # Get list of all Docker images
+        images = docker_client.images.list(all=True)
+        
+        # Process images data
+        images_data = []
+        for img in images:
+            tags = img.tags if img.tags else ['<none>:<none>']
+            created = img.attrs.get('Created', 'N/A')
+            size_mb = round(img.attrs.get('Size', 0) / (1024 * 1024), 2)
+            
+            images_data.append({
+                'id': img.short_id.split(':')[-1][:12],
+                'tags': tags,
+                'created': created,
+                'size_mb': size_mb,
+                'full_id': img.id
+            })
+        
+        return render_template('images.html', images=images_data)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/images/<image_id>')
+def get_image_details(image_id):
+    """Get detailed information about a specific Docker image"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+    
+    try:
+        image = docker_client.images.get(image_id)
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'id': image.id,
+                'tags': image.tags,
+                'created': image.attrs.get('Created'),
+                'size': image.attrs.get('Size'),
+                'architecture': image.attrs.get('Architecture'),
+                'os': image.attrs.get('Os'),
+                'config': image.attrs.get('Config', {})
+            }
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 404
+
+@app.route('/api/images/pull', methods=['POST'])
+def pull_image():
+    """Pull a Docker image from a registry"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+    
+    data = request.get_json()
+    if not data or 'image' not in data:
+        return jsonify({'status': 'error', 'message': 'Image name is required'}), 400
+    
+    image_name = data['image']
+    tag = data.get('tag', 'latest')
+    
+    def generate():
+        try:
+            # Pull the image with progress tracking
+            response = docker_client.api.pull(
+                repository=image_name,
+                tag=tag,
+                stream=True,
+                decode=True
+            )
+            
+            for line in response:
+                if 'status' in line:
+                    progress = line.get('progress', '')
+                    id = line.get('id', '')
+                    status = line.get('status', '')
+                    
+                    if id and status:
+                        progress_data = {
+                            'id': id,
+                            'status': status,
+                            'progress': progress,
+                            'type': 'pull_progress'
+                        }
+                        yield f"data: {json.dumps(progress_data)}\n\n"
+                    
+                    if 'Downloaded' in status or 'Download complete' in status or 'Pull complete' in status:
+                        progress_data = {
+                            'status': status,
+                            'type': 'status_update'
+                        }
+                        yield f"data: {json.dumps(progress_data)}\n\n"
+            
+            # Final success message
+            success_data = {
+                'status': 'success',
+                'message': f'Successfully pulled {image_name}:{tag}',
+                'type': 'complete'
+            }
+            yield f"data: {json.dumps(success_data)}\n\n"
+            
+        except Exception as e:
+            error_data = {
+                'status': 'error',
+                'message': str(e),
+                'type': 'error'
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+@app.route('/api/images/<image_id>', methods=['DELETE'])
+def remove_image(image_id):
+    """Remove a Docker image"""
+    if not docker_client:
+        return jsonify({'status': 'error', 'message': 'Docker client not available'}), 503
+    
+    try:
+        force = request.args.get('force', 'false').lower() == 'true'
+        docker_client.images.remove(image_id, force=force)
+        return jsonify({
+            'status': 'success',
+            'message': f'Image {image_id} removed successfully'
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 if __name__ == '__main__':
     # Ensure required directories exist
     os.makedirs('/opt/obs-config', exist_ok=True)
