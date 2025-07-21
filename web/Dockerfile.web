@@ -4,7 +4,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies including CLI tools needed by scripts
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    libpq-dev \
     curl \
     jq \
     bc \
@@ -16,7 +19,7 @@ RUN apt-get update && apt-get install -y \
 # Upgrade pip and install setuptools first
 RUN pip install --upgrade pip setuptools>=65.0.0
 
-# Copy requirements and install Python dependencies
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -29,8 +32,14 @@ COPY docker_subprocess_client.py .
 COPY docker_adapter.py .
 COPY templates/ templates/
 
+# Set environment variables
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+ENV PYTHONUNBUFFERED=1
+
 # Create necessary directories
 RUN mkdir -p /opt/obs-config /opt/obs-instances /opt/obs-backups
+RUN mkdir -p /app/instance
 
 # Create non-root user and add to docker group for Docker socket access
 # Note: Docker group GID may vary between systems, so we handle this flexibly
