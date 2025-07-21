@@ -55,8 +55,10 @@ services:
       openssl req -x509 -newkey rsa:4096 -nodes -out /app/ssl/cert.pem -keyout /app/ssl/key.pem
       -days 365 -subj "/C=DE/ST=NRW/L=Koeln/O=OBS-Docker/CN=localhost" &&
       gunicorn --worker-class eventlet -w 1
-      -b 0.0.0.0:8080
-      -b 0.0.0.0:8443 --certfile=/app/ssl/cert.pem --keyfile=/app/ssl/key.pem
+      --bind 0.0.0.0:8080
+      --bind 0.0.0.0:8443
+      --certfile=/app/ssl/cert.pem
+      --keyfile=/app/ssl/key.pem
       --access-logfile - --error-logfile -
       app:app'
     labels:
