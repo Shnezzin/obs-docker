@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 # Enhanced logging and error handling
-set -euo pipefail
+set -euxo pipefail
 
 # Logging function
 log() {
@@ -16,8 +16,8 @@ PASSWD=${DEFAULT_PASSWD:-obs123}
 GROUP=${USER}
 
 # Always use UID/GID 1000 for the user (standard for non-root users)
-USER_ID=1000
-GROUP_ID=1000
+USER_ID=${USER_ID:-1000}
+GROUP_ID=${GROUP_ID:-1000}
 
 log "Configuring user: $USER (UID: $USER_ID, GID: $GROUP_ID)"
 
@@ -192,15 +192,13 @@ EOF
         sudo service dbus start || log "WARNING: D-Bus service check failed"
     fi
 
-    # Set VNC password for user (garantiert im User-Kontext)
+    # VNC-Passwort immer non-interaktiv setzen
     mkdir -p /home/$USER/.vnc
     chown $USER:$GROUP /home/$USER/.vnc
     chmod 700 /home/$USER/.vnc
-    if [ ! -f /home/$USER/.vnc/passwd ]; then
-        sudo -u $USER bash -c "echo $PASSWD | vncpasswd -f > /home/$USER/.vnc/passwd"
-        chown $USER:$GROUP /home/$USER/.vnc/passwd
-        chmod 600 /home/$USER/.vnc/passwd
-    fi
+    echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
+    chown $USER:$GROUP /home/$USER/.vnc/passwd
+    chmod 600 /home/$USER/.vnc/passwd
 
     # Ensure .xsession exists and is correct
     if [[ ! -e /home/$USER/.xsession ]]; then
