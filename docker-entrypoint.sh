@@ -192,12 +192,12 @@ EOF
         sudo service dbus start || log "WARNING: D-Bus service check failed"
     fi
 
-    # Set VNC password for user
+    # Set VNC password for user (garantiert im User-Kontext)
     mkdir -p /home/$USER/.vnc
     chown $USER:$GROUP /home/$USER/.vnc
     chmod 700 /home/$USER/.vnc
     if [ ! -f /home/$USER/.vnc/passwd ]; then
-        echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
+        sudo -u $USER bash -c "echo $PASSWD | vncpasswd -f > /home/$USER/.vnc/passwd"
         chown $USER:$GROUP /home/$USER/.vnc/passwd
         chmod 600 /home/$USER/.vnc/passwd
     fi
