@@ -65,6 +65,9 @@ limiter = Limiter(
     default_limits=[app.config['RATE_LIMIT']]
 )
 
+# Check if we're in development mode
+debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
+
 # Minimal CSP configuration
 csp = {
     'default-src': ["'self'"],
