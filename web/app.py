@@ -1878,10 +1878,25 @@ def fix_desktop_configuration(container_name):
         )
         log_debug(f"User check: exit_code={user_check.exit_code}, output={user_check.output.decode()}")
         
+        # Check if developer group exists
+        group_check = container.exec_run(
+            'getent group developer',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Group check: exit_code={group_check.exit_code}, output={group_check.output.decode()}")
+        
+        # Create developer group if it doesn't exist
+        if group_check.exit_code != 0:
+            create_group = container.exec_run(
+                'groupadd -g 1000 developer',
+                user='root', debug_logs=debug_logs
+            )
+            log_debug(f"Create group: exit_code={create_group.exit_code}, output={create_group.output.decode()}")
+        
         # Create user if it doesn't exist
         if user_check.exit_code != 0:
             create_user = container.exec_run(
-                'useradd -m -s /bin/bash -u 1000 -g 1000 developer',
+                'useradd -m -s /bin/bash -u 1000 -g developer developer',
                 user='root', debug_logs=debug_logs
             )
             log_debug(f"Create user: exit_code={create_user.exit_code}, output={create_user.output.decode()}")
@@ -1892,6 +1907,37 @@ def fix_desktop_configuration(container_name):
                 user='root', debug_logs=debug_logs
             )
             log_debug(f"Set password: exit_code={set_pass.exit_code}")
+        else:
+            # User exists, check current group and fix if needed
+            current_group = container.exec_run(
+                'id -gn developer',
+                user='root', debug_logs=debug_logs
+            )
+            log_debug(f"Current user group: exit_code={current_group.exit_code}, output={current_group.output.decode()}")
+            
+            # If user is not in developer group, change it
+            if current_group.exit_code == 0 and 'developer' not in current_group.output.decode():
+                # First ensure developer group exists
+                if group_check.exit_code != 0:
+                    create_group = container.exec_run(
+                        'groupadd -g 1000 developer',
+                        user='root', debug_logs=debug_logs
+                    )
+                    log_debug(f"Create group: exit_code={create_group.exit_code}")
+                
+                # Change user's primary group to developer
+                change_group = container.exec_run(
+                    'usermod -g developer developer',
+                    user='root', debug_logs=debug_logs
+                )
+                log_debug(f"Change user group: exit_code={change_group.exit_code}")
+                
+                # Also add user to developer group as secondary group
+                add_to_group = container.exec_run(
+                    'usermod -a -G developer developer',
+                    user='root', debug_logs=debug_logs
+                )
+                log_debug(f"Add user to group: exit_code={add_to_group.exit_code}")
         
         # Fix .xsession for developer user
         xsession_result = container.exec_run(
@@ -1956,26 +2002,33 @@ def fix_desktop_configuration(container_name):
         )
         log_debug(f"Set XRDP permissions: exit_code={chmod_xrdp.exit_code}")
         
-        # Start supervisor properly
+        # Start supervisor in background and wait
         supervisor_start = container.exec_run(
-            'supervisord -c /etc/supervisor/xrdp.conf',
+            'nohup supervisord -c /etc/supervisor/xrdp.conf > /dev/null 2>&1 &',
             user='root', debug_logs=debug_logs
         )
         log_debug(f"Supervisor start: exit_code={supervisor_start.exit_code}")
         
-        # Wait for services to start
+        # Wait for supervisor to start
         sleep_result = container.exec_run(
-            'sleep 5',
+            'sleep 3',
             user='root', debug_logs=debug_logs
         )
-        log_debug(f"Wait for services: exit_code={sleep_result.exit_code}")
+        log_debug(f"Wait for supervisor: exit_code={sleep_result.exit_code}")
         
         # Check supervisor status
         status_result = container.exec_run(
-            'supervisorctl status',
+            'supervisorctl status || echo "Supervisor not ready yet"',
             user='root', debug_logs=debug_logs
         )
         log_debug(f"Supervisor status: exit_code={status_result.exit_code}, output={status_result.output.decode()}")
+        
+        # Wait a bit more for services to start
+        sleep_result2 = container.exec_run(
+            'sleep 5',
+            user='root', debug_logs=debug_logs
+        )
+        log_debug(f"Wait for services: exit_code={sleep_result2.exit_code}")
         
         # Check if services are running
         service_check = container.exec_run(
