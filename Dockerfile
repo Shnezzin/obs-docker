@@ -174,3 +174,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD /scripts/health-check.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
+
+RUN apt-get update && \
+    apt-get install -y xrdp tigervnc-standalone-server lxde supervisor dbus-x11 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 3389 5901

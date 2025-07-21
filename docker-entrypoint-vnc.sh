@@ -8,7 +8,7 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2
 }
 
-log "Starting OBS Docker container initialization..."
+log "Starting OBS Docker container initialization with VNC..."
 
 # Get user and password from environment variables
 USER=${DEFAULT_USER:-developer}
@@ -73,7 +73,7 @@ fi
 
 if (( $# == 0 )); then
     # Set login user name
-    log "Configuring RDP access for user: $USER"
+    log "Configuring VNC access for user: $USER"
 
     # Set login password
     log "Setting user password"
@@ -127,56 +127,43 @@ EOF
         chmod -R 755 ${HOME}/.config
     fi
     
-    # Generate RDP keys if needed
-    log "Checking RDP keys"
-    [[ ! -e /etc/xrdp/rsakeys.ini ]] && \
-        sudo -u xrdp -g xrdp xrdp-keygen xrdp /etc/xrdp/rsakeys.ini > /dev/null 2>&1
-
-    # Configure XRDP for better desktop support
-    log "Configuring XRDP for LXDE"
+    # Install VNC server if not already installed
+    log "Installing VNC server..."
+    apt-get update && apt-get install -y tightvncserver xvfb
     
-    # Backup original XRDP config
-    cp /etc/xrdp/xrdp.ini /etc/xrdp/xrdp.ini.backup
+    # Create VNC startup script
+    cat > /usr/local/bin/start-vnc.sh << 'EOF'
+#!/bin/bash
+export DISPLAY=:1
+Xvfb :1 -screen 0 1920x1080x24 &
+sleep 2
+startlxde &
+EOF
+    chmod +x /usr/local/bin/start-vnc.sh
     
-    # Update XRDP configuration for LXDE
-    cat > /etc/xrdp/xrdp.ini << 'EOF'
-[Globals]
-max_bpp=24
-xserverbpp=24
-port=3389
-use_vsock=false
-security_layer=negotiate
-crypt_level=high
-certificate=
-key_file=
-ssl_protocols=TLSv1.2, TLSv1.3
-autorun=
+    # Create VNC password file
+    mkdir -p /home/${USER}/.vnc
+    echo "${PASSWD}" | vncpasswd -f > /home/${USER}/.vnc/passwd
+    chown -R ${USER}:${GROUP} /home/${USER}/.vnc
+    chmod 600 /home/${USER}/.vnc/passwd
+    
+    # Set supervisord conf for VNC service
+    cat > /etc/supervisor/vnc.conf << 'EOF'
+[supervisord]
+user=root
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+childlogdir=/var/log/supervisor
 
-[Xvnc]
-name=Xvnc
-lib=libvnc.so
-ip=localhost
-port=-1
-username=ask
-password=ask
+[program:dbus]
+command=/usr/bin/dbus-daemon --system --nofork --nopidfile
 
-[Xorg]
-name=Xorg
-lib=libxup.so
-ip=localhost
-port=-1
-username=ask
-password=ask
-
-[LXDE]
-name=LXDE
-lib=libxup.so
-ip=localhost
-port=-1
-username=ask
-password=ask
-xserverbpp=24
-max_bpp=24
+[program:vncserver]
+command=/usr/bin/vncserver :1 -geometry 1920x1080 -depth 24 -localhost no
+user=developer
+environment=DISPLAY=":1",HOME="/home/developer"
+autostart=true
+autorestart=true
 EOF
 
     # Health check: verify critical services can start
@@ -186,32 +173,7 @@ EOF
         sudo service dbus start || log "WARNING: D-Bus service check failed"
     fi
 
-    # Set VNC password for user
-    mkdir -p /home/$USER/.vnc
-    chown $USER:$GROUP /home/$USER/.vnc
-    chmod 700 /home/$USER/.vnc
-    if [ ! -f /home/$USER/.vnc/passwd ]; then
-        echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
-        chown $USER:$GROUP /home/$USER/.vnc/passwd
-        chmod 600 /home/$USER/.vnc/passwd
-    fi
-
-    # Ensure .xsession exists and is correct
-    if [[ ! -e /home/$USER/.xsession ]]; then
-        echo "startlxde" > /home/$USER/.xsession
-        chown $USER:$GROUP /home/$USER/.xsession
-        chmod 644 /home/$USER/.xsession
-    fi
-
-    # Start VNC server as user (falls nicht läuft)
-    if ! pgrep -u $USER Xtightvnc > /dev/null 2>&1; then
-        sudo -u $USER vncserver :1 -geometry 1920x1080 -depth 24
-    fi
-
-    # Starte supervisor (managt xrdp, dbus)
-    exec /usr/bin/supervisord -c /etc/supervisor/xrdp.conf
-
-    set -- /usr/bin/supervisord -c /etc/supervisor/xrdp.conf
+    set -- /usr/bin/supervisord -c /etc/supervisor/vnc.conf
     if [[ $USER_ID != "0" ]]; then
         [[ ! -e /usr/local/bin/_alt-su ]] && \
             sudo install -g $GROUP_ID -m 4750 $(which gosu || which su-exec) /usr/local/bin/_alt-su
@@ -223,9 +185,9 @@ unset PASSWD
 
 log "Starting services with command: $*"
 log "Container initialization completed successfully"
-log "RDP should be available on port 3389"
+log "VNC should be available on port 5901"
 log "User $USER created with password"
 log "#############################"
 
 # Execute the main command
-exec "$@"
+exec "$@" 
