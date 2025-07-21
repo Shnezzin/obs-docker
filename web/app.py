@@ -63,11 +63,14 @@ csp = {
     'connect-src': ["'self'"],
 }
 
+# Check if we're in development mode
+debug_mode = os.environ.get('FLASK_ENV', 'production').lower() == 'development'
+
 talisman = Talisman(
     app,
-    force_https=True,
-    strict_transport_security=True,
-    session_cookie_secure=True,
+    force_https=not debug_mode,  # Only force HTTPS in production
+    strict_transport_security=not debug_mode,  # Only use HSTS in production
+    session_cookie_secure=not debug_mode,  # Only secure cookies in production
     content_security_policy=csp,
     content_security_policy_nonce_in=['script-src'],
     referrer_policy='strict-origin-when-cross-origin',

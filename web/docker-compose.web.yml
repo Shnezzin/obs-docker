@@ -7,12 +7,14 @@ services:
       dockerfile: Dockerfile.web
     container_name: obs-web-manager
     ports:
-      - "8080:8080"
+      - "8080:8080"  # HTTP
+      - "8443:8443"  # HTTPS
     volumes:
       # Docker socket with proper permissions
       - /var/run/docker.sock:/var/run/docker.sock
-      # Alternative for Windows (uncomment if needed)
-      # - //./pipe/docker_engine://./pipe/docker_engine
+      # SSL certificates
+      - ./ssl:/app/ssl
+      # Other volumes
       - ../scripts:/scripts:ro
       - ../monitoring:/monitoring:ro
       - obs-config:/opt/obs-config
@@ -25,39 +27,56 @@ services:
       - CONFIG_DIR=/opt/obs-config
       - INSTANCES_DIR=/opt/obs-instances
       - BACKUPS_DIR=/opt/obs-backups
-      # Note: DOCKER_HOST removed to prevent 'http+docker' URL scheme errors
-      # Docker client will use explicit socket path instead
+      # SSL configuration
+      - SSL_CERT_PATH=/app/ssl/cert.pem
+      - SSL_KEY_PATH=/app/ssl/key.pem
+      - SSL_CERT_DAYS=365
+      - SSL_CERT_COUNTRY=DE
+      - SSL_CERT_STATE=NRW
+      - SSL_CERT_CITY=Koeln
+      - SSL_CERT_ORG=OBS-Docker
+      - SSL_CERT_CN=localhost
     networks:
       - obs-network
     restart: unless-stopped
     # Grant access to Docker socket by matching host docker group GID
     group_add:
       - "${DOCKER_GID:-999}"
-    # Temporary fix for persistent http+docker error: run as root
+    # Run as root to ensure certificate generation works
     user: "0:0"
-    # Alternative: run with docker group privileges
-    # user: "1000:${DOCKER_GID:-999}"
-    # Alternative: privileged mode (uncomment if needed)
-    # privileged: true
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/system/stats"]
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:8443/api/system/stats"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    command: >
+      sh -c "mkdir -p /app/ssl && \
+      openssl req -x509 -newkey rsa:4096 -nodes -out $${SSL_CERT_PATH} -keyout $${SSL_KEY_PATH} \
+      -days $${SSL_CERT_DAYS} -subj \"/C=$${SSL_CERT_COUNTRY}/ST=$${SSL_CERT_STATE}/L=$${SSL_CERT_CITY}/O=$${SSL_CERT_ORG}/CN=$${SSL_CERT_CN}" && \
+      gunicorn --worker-class eventlet -w 1 \
+      -b 0.0.0.0:8080 \
+      -b 0.0.0.0:8443 --certfile=$${SSL_CERT_PATH} --keyfile=$${SSL_KEY_PATH} \
+      --access-logfile - --error-logfile - \
+      app:app"
     labels:
       - "com.obs-docker.service=web-manager"
       - "com.obs-docker.version=2.0.0"
-
-volumes:
-  obs-config:
-    driver: local
-  obs-instances:
-    driver: local
-  obs-backups:
-    driver: local
+      - "traefik.enable=true"
+      - "traefik.http.routers.obs-web-https.entrypoints=websecure"
+      - "traefik.http.routers.obs-web-https.rule=Host(`${TRAEFIK_HOST:-localhost}`)"
+      - "traefik.http.routers.obs-web-https.tls=true"
+      - "traefik.http.routers.obs-web-http.entrypoints=web"
+      - "traefik.http.routers.obs-web-http.rule=Host(`${TRAEFIK_HOST:-localhost}`)"
+      - "traefik.http.routers.obs-web-http.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
 
 networks:
   obs-network:
     driver: bridge
-    name: obs-network
+
+volumes:
+  obs-config:
+  obs-instances:
+  obs-backups:

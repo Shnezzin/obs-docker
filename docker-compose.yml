@@ -17,10 +17,13 @@ services:
     ports:
       - "3389:3389"  # RDP port
       - "4455:4455"  # Additional port for OBS plugins
+      - "8080:8080"  # HTTP port
+      - "8443:8443"  # HTTPS port
     
     volumes:
       - ./home:/home:rw
       - obs-config:/opt/obs-config
+      - ./web/ssl:/app/ssl
     
     environment:
       - USER=${OBS_USER:-developer}
@@ -29,6 +32,9 @@ services:
       - DISPLAY=:1
       - TZ=${TIMEZONE:-UTC}
       - LANG=${LOCALE:-en_US.UTF-8}
+      - FLASK_ENV=production
+      - SSL_CERT_PATH=/app/ssl/cert.pem
+      - SSL_KEY_PATH=/app/ssl/key.pem
     
     # Health check to ensure services are running
     healthcheck:
@@ -51,6 +57,13 @@ services:
         reservations:
           memory: 1G
           cpus: '0.5'
+    
+    command: >
+      sh -c "mkdir -p /app/ssl && \
+      openssl req -x509 -newkey rsa:4096 -nodes -out /app/ssl/cert.pem -keyout /app/ssl/key.pem \
+      -days 365 -subj \"/C=DE/ST=NRW/L=Koeln/O=OBS-Docker/CN=localhost\" && \
+      gunicorn --worker-class eventlet -w 1 -b 0.0.0.0:8080 -b 0.0.0.0:8443 \
+      --certfile=/app/ssl/cert.pem --keyfile=/app/ssl/key.pem app:app"
 
 volumes:
   obs-config:

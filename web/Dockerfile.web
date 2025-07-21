@@ -33,9 +33,10 @@ COPY docker_adapter.py .
 COPY templates/ templates/
 
 # Set environment variables
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FLASK_APP=app.py \
+    FLASK_ENV=development
 
 # Create necessary directories
 RUN mkdir -p /opt/obs-config /opt/obs-instances /opt/obs-backups
