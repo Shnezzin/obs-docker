@@ -35,15 +35,21 @@
                     <h4 class="text-center mb-4">OBS Manager</h4>
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" 
-                               href="{{ url_for('index') }}">
+                            <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" 
+                               href="{{ url_for('dashboard') }}">
                                 <i class="fas fa-tachometer-alt me-2"></i>Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'images' %}active{% endif %}" 
-                               href="{{ url_for('images') }}">
-                                <i class="fas fa-images me-2"></i>Images
+                            <a class="nav-link {% if request.endpoint == 'instances' %}active{% endif %}" 
+                               href="{{ url_for('instances') }}">
+                                <i class="fas fa-cube me-2"></i>Instances
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'containers' %}active{% endif %}" 
+                               href="{{ url_for('containers') }}">
+                                <i class="fas fa-box me-2"></i>Containers
                             </a>
                         </li>
                     </ul>
