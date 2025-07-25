@@ -5,7 +5,6 @@ import time
 import secrets
 from functools import wraps
 from flask import request, jsonify, session, current_app, g
-from werkzeug.security import safe_str_cmp
 
 class CSRFProtect:
     def __init__(self, app=None):
@@ -172,9 +171,9 @@ csrf = CSRFProtect()
 
 def csrf_protect(f):
     ""
-    Decorator for views that require CSRF protection.
-    Use this for API endpoints that need CSRF protection.
-    """
+    #Decorator for views that require CSRF protection.
+    #Use this for API endpoints that need CSRF protection.
+    ""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_app.config.get('WTF_CSRF_ENABLED', True):

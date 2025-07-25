@@ -357,7 +357,7 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         loadSystemInfo();
@@ -388,11 +388,27 @@
         try {
             const result = await apiCall('/api/system/info');
             console.log('[DEBUG] /api/system/info result:', result);
-            document.getElementById('dockerVersion').textContent = result.docker && result.docker.version ? result.docker.version : 'Unknown';
-            document.getElementById('hostOS').textContent = result.platform && result.platform.system ? result.platform.system : 'Unknown';
-            document.getElementById('architecture').textContent = result.platform && result.platform.architecture ? result.platform.architecture : 'Unknown';
-            document.getElementById('totalMemory').textContent = result.resources && result.resources.memory_total ? formatBytes(result.resources.memory_total) : 'Unknown';
-            document.getElementById('cpuCores').textContent = result.resources && result.resources.cpu_count ? result.resources.cpu_count : 'Unknown';
+            
+            // Extract info from the correct response structure
+            const info = result.info || result;
+            
+            document.getElementById('dockerVersion').textContent = info.docker_available ? 'Available' : 'Not Available';
+            document.getElementById('hostOS').textContent = info.platform || 'Unknown';
+            document.getElementById('architecture').textContent = 'x64'; // Default for now
+            
+            // Get system stats for memory and CPU info
+            const statsResult = await apiCall('/api/system/stats');
+            const stats = statsResult.stats || statsResult;
+            
+            if (stats.memory) {
+                document.getElementById('totalMemory').textContent = formatBytes(stats.memory.total);
+            } else {
+                document.getElementById('totalMemory').textContent = 'Unknown';
+            }
+            
+            // CPU cores from system info
+            document.getElementById('cpuCores').textContent = navigator.hardwareConcurrency || 'Unknown';
+            
         } catch (error) {
             console.error('Error loading system info:', error);
             // Set placeholder values

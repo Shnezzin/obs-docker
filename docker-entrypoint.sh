@@ -12,7 +12,7 @@ log "Starting OBS Docker container initialization..."
 
 # Get user and password from environment variables
 USER=${DEFAULT_USER:-developer}
-PASSWD=${DEFAULT_PASSWD:-obs123}
+PASSWD=${DEFAULT_PASSWD:?DEFAULT_PASSWD environment variable is not set}
 GROUP=${USER}
 
 # Always use UID/GID 1000 for the user (standard for non-root users)
@@ -29,46 +29,13 @@ fi
 # Clear environment variables for security
 unset DEFAULT_USER DEFAULT_PASSWD
 
-# Add group
-log "Setting up group: $GROUP (GID: $GROUP_ID)"
+# Add group and user
+log "Setting up user and group: $USER:$GROUP ($USER_ID:$GROUP_ID)"
 if ! getent group $GROUP >/dev/null 2>&1; then
-    if ! groupadd -g $GROUP_ID $GROUP; then
-        log "WARNING: Failed to create group $GROUP (may already exist)"
-    else
-        log "Created group: $GROUP"
-    fi
-else
-    log "Group $GROUP already exists"
+    groupadd -g $GROUP_ID $GROUP
 fi
-
-# Add user
-log "Setting up user: $USER (UID: $USER_ID)"
 if ! getent passwd $USER >/dev/null 2>&1; then
-    export HOME=/home/$USER
-    if ! useradd -d ${HOME} -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER; then
-        log "WARNING: Failed to create user $USER (may already exist)"
-        # Check if user with UID 1000 exists but different name
-        EXISTING_USER=$(getent passwd $USER_ID | cut -d: -f1 2>/dev/null || echo "")
-        if [[ -n "$EXISTING_USER" && "$EXISTING_USER" != "$USER" ]]; then
-            log "WARNING: User with UID $USER_ID already exists as '$EXISTING_USER'"
-            # Rename existing user to our desired name
-            if usermod -l $USER $EXISTING_USER; then
-                log "Renamed user '$EXISTING_USER' to '$USER'"
-            else
-                log "WARNING: Could not rename user '$EXISTING_USER' to '$USER'"
-            fi
-        fi
-    else
-        log "Created user: $USER with home directory: $HOME"
-    fi
-else
-    log "User $USER already exists"
-fi
-
-# Fix group name for GID 1000 if needed
-EXISTING_GROUP=$(getent group 1000 | cut -d: -f1)
-if [ "$EXISTING_GROUP" != "developer" ] && [ -n "$EXISTING_GROUP" ]; then
-    groupmod -n developer "$EXISTING_GROUP"
+    useradd -d /home/$USER -m -s /bin/bash -u $USER_ID -g $GROUP_ID $USER
 fi
 
 # Revert permissions for security
@@ -105,58 +72,7 @@ log "Checking RDP keys"
     sudo -u xrdp -g xrdp xrdp-keygen xrdp /etc/xrdp/rsakeys.ini > /dev/null 2>&1
 
 # Configure XRDP for better desktop support
-log "Configuring XRDP for LXDE"
-    
-    # Backup original XRDP config
-    cp /etc/xrdp/xrdp.ini /etc/xrdp/xrdp.ini.backup
-    
-    # Update XRDP configuration for LXDE
-    cat > /etc/xrdp/xrdp.ini << 'EOF'
-[Globals]
-max_bpp=24
-xserverbpp=24
-port=3389
-use_vsock=false
-security_layer=negotiate
-crypt_level=high
-certificate=
-key_file=
-ssl_protocols=TLSv1.2, TLSv1.3
-autorun=
-
-[Xvnc]
-name=Xvnc
-lib=libvnc.so
-ip=localhost
-port=-1
-username=ask
-password=ask
-
-[Xorg]
-name=Xorg
-lib=libxup.so
-ip=localhost
-port=-1
-username=ask
-password=ask
-
-[LXDE]
-name=LXDE
-lib=libxup.so
-ip=localhost
-port=-1
-username=ask
-password=ask
-xserverbpp=24
-max_bpp=24
-EOF
-
-    # Health check: verify critical services can start
-log "Performing pre-start health checks"
-if ! pgrep -f dbus > /dev/null 2>&1; then
-    log "Starting D-Bus for health check"
-    service dbus start || log "WARNING: D-Bus service check failed"
-fi
+log "Configuring XRDP for ${DESKTOP_ENV}"
 
 # Set VNC password non-interactively
 log "Setting up VNC server"
@@ -166,12 +82,6 @@ chmod 700 /home/$USER/.vnc
 echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
 chown $USER:$GROUP /home/$USER/.vnc/passwd
 chmod 600 /home/$USER/.vnc/passwd
-
-# Start VNC server as user if not running
-if ! pgrep -u $USER Xtightvnc > /dev/null 2>&1; then
-    log "Starting VNC server"
-    sudo -u $USER vncserver :1 -geometry 1920x1080 -depth 24 || log "WARNING: VNC server failed to start"
-fi
 
 # Set default command if none provided
 if [ $# -eq 0 ]; then

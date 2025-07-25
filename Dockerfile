@@ -15,6 +15,7 @@ FROM ubuntu:${UBUNTU_VERSION} as suexec
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       build-essential \
        make \
        gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -51,7 +52,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     DEFAULT_USER=${USERNAME} \
-    DEFAULT_PASSWD=SecurePassword123!
+    DEFAULT_PASSWD=
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y ${ADDITIONAL_APT_GET_OPTS} \
@@ -133,7 +134,13 @@ RUN groupadd -r xrdp \
 COPY --from=suexec /opt/su-exec/su-exec /usr/local/bin/su-exec
 
 # Configure XRDP and desktop environment
-RUN echo "startlxde" > /etc/skel/.xsession \
+RUN case "$DESKTOP_ENV" in \
+      "lxde") echo "startlxde" > /etc/skel/.xsession ;; \
+      "xfce") echo "startxfce4" > /etc/skel/.xsession ;; \
+      "kde") echo "startkde" > /etc/skel/.xsession ;; \
+      "gnome") echo "gnome-session" > /etc/skel/.xsession ;; \
+      *) echo "startlxde" > /etc/skel/.xsession ;; \
+    esac \
     && install -o root -g xrdp -m 2775 -d /var/run/xrdp \
     && install -o root -g xrdp -m 3777 -d /var/run/xrdp/sockdir \
     && install -o root -g root -m 0755 -d /var/run/dbus \
@@ -154,7 +161,10 @@ RUN { \
       echo "[program:xrdp]"; \
       echo "command=/usr/sbin/xrdp --nodaemon"; \
       echo "user=xrdp"; \
-    } > /etc/supervisor/xrdp.conf
+      echo "[program:vnc]"; \
+      echo "command=/usr/bin/tigervncserver -xstartup /usr/bin/${DESKTOP_ENV} -localhost no -PasswordFile /home/${USERNAME}/.vnc/passwd -desktop ${DESKTOP_ENV} :1"; \
+      echo "user=${USERNAME}"; \
+    } > /etc/supervisor/services.conf
 
 # Install OBS Studio
 RUN ARCH=$(dpkg --print-architecture) \

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   obs-studio:
     build:
@@ -16,8 +14,7 @@ services:
     
     ports:
       - "3389:3389"  # RDP port
-      - "4455:4455"  # Additional port for OBS plugins
-      - "8080:8080"  # HTTP port
+            - "8080:8080"  # HTTP port
       - "8443:8443"  # HTTPS port
     
     volumes:
@@ -27,7 +24,7 @@ services:
     
     environment:
       - USER=${OBS_USER:-developer}
-      - PASSWD=${OBS_PASSWD:-SecurePassword123!}
+      - PASSWD=${OBS_PASSWD:?OBS_PASSWD environment variable is not set}
       - GROUP=${OBS_GROUP:-developer}
       - DISPLAY=:1
       - TZ=${TIMEZONE:-UTC}
@@ -35,6 +32,7 @@ services:
       - FLASK_ENV=production
       - SSL_CERT_PATH=/app/ssl/cert.pem
       - SSL_KEY_PATH=/app/ssl/key.pem
+      - PYTHONPATH=/app
     
     # Health check to ensure services are running
     healthcheck:
@@ -58,12 +56,13 @@ services:
           memory: 1G
           cpus: '0.5'
     
+    working_dir: /app
     command: >
       sh -c "mkdir -p /app/ssl && \
       openssl req -x509 -newkey rsa:4096 -nodes -out /app/ssl/cert.pem -keyout /app/ssl/key.pem \
       -days 365 -subj \"/C=DE/ST=NRW/L=Koeln/O=OBS-Docker/CN=localhost\" && \
-      gunicorn --worker-class eventlet -w 1 -b 0.0.0.0:8080 -b 0.0.0.0:8443 \
-      --certfile=/app/ssl/cert.pem --keyfile=/app/ssl/key.pem app:app"
+      cd /app && \
+      python -m gunicorn --worker-class eventlet -w 1 -b 0.0.0.0:8080 web.app:app"
 
 volumes:
   obs-config:

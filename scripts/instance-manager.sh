@@ -187,7 +187,7 @@ get_next_port() {
     local base_port="$1"
     local port=$base_port
     
-    while netstat -tuln 2>/dev/null | grep -q ":$port "; do
+    while ss -tuln | grep -q ":$port "; do
         ((port++))
     done
     
@@ -445,6 +445,10 @@ EOF
 
 # Main function
 main() {
+    if ! command -v jq &> /dev/null; then
+        log "ERROR: jq is not installed. Please install it to continue."
+        exit 1
+    fi
     init_instance_manager
     
     case "${1:-help}" in

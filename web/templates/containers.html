@@ -153,15 +153,16 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
+    let containers = {};
     let resourceChart;
     let logsRefreshInterval;
     let currentLogsContainer = '';
     
     document.addEventListener('DOMContentLoaded', function() {
         initializeResourceChart();
-        loadContainers(); // Initial load
+        loadContainers();
     });
     
     function initializeResourceChart() {
@@ -200,7 +201,6 @@
     }
     
     function updateResourceChart() {
-        const containers = {{ containers|tojson }};
         const labels = [];
         const cpuData = [];
         const memoryData = [];
@@ -224,16 +224,117 @@
         resourceChart.update();
     }
     
+    async function loadContainers() {
+        try {
+            const result = await apiCall('/api/containers');
+            containers = result.containers || result || {};
+            console.log('[DEBUG] Loaded containers:', containers);
+            updateContainersTable();
+            updateResourceChart();
+        } catch (error) {
+            console.error('[DEBUG] Error loading containers:', error);
+            const tbody = document.getElementById('containersTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center text-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error loading containers. Please check the console for details.
+                    </td>
+                </tr>`;
+        }
+    }
+
+    function updateContainersTable() {
+        const tbody = document.getElementById('containersTableBody');
+        tbody.innerHTML = '';
+        
+        const containerList = Object.values(containers);
+        console.log('[DEBUG] updateContainersTable: containerList:', containerList);
+        
+        if (containerList.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No containers found.</td></tr>`;
+            return;
+        }
+        
+        containerList.forEach(container => {
+            console.log('[DEBUG] Rendering container:', container);
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${container.name}</strong></td>
+                <td><span class="badge bg-${getStatusColor(container.status)}"><i class="fas fa-${getStatusIcon(container.status)}"></i> ${container.status}</span></td>
+                <td><code>${container.image}</code></td>
+                <td><span title="${container.created}">${formatDateTime(container.created)}</span></td>
+                <td>${formatPorts(container.ports)}</td>
+                <td class="cpu-usage">${container.cpu_percent !== undefined ? `${container.cpu_percent.toFixed(1)}%` : '<span class="text-muted">-</span>'}</td>
+                <td class="memory-usage">${container.memory_usage && container.memory_limit ? `${((container.memory_usage / container.memory_limit) * 100).toFixed(1)}%<br><small class='text-muted'>${(container.memory_usage / 1024 / 1024).toFixed(1)}MB</small>` : '<span class="text-muted">-</span>'}</td>
+                <td>
+                    <div class="btn-group" role="group">
+                        ${container.status === 'running' ? `
+                            <button class="btn btn-sm btn-warning" onclick="stopContainer('${container.name}')" title="Stop"><i class="fas fa-stop"></i></button>
+                            <button class="btn btn-sm btn-info" onclick="restartContainer('${container.name}')" title="Restart"><i class="fas fa-redo"></i></button>
+                        ` : `
+                            <button class="btn btn-sm btn-success" onclick="startContainer('${container.name}')" title="Start"><i class="fas fa-play"></i></button>
+                        `}
+                        <button class="btn btn-sm btn-secondary" onclick="viewLogs('${container.name}')" title="View Logs"><i class="fas fa-file-alt"></i></button>
+                        <button class="btn btn-sm btn-primary" onclick="connectRDP('${container.name}')" title="Connect RDP"><i class="fas fa-desktop"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function formatDateTime(dateString) {
+        if (!dateString) return 'Unknown';
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return dateString;
+        const pad = n => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    function formatPorts(ports) {
+        if (!ports || Object.keys(ports).length === 0) return '<span class="text-muted">No ports</span>';
+        let html = '';
+        for (const [port, bindings] of Object.entries(ports)) {
+            if (bindings) {
+                bindings.forEach(binding => {
+                    if (binding && binding.HostPort) {
+                        html += `<span class="badge bg-info">${binding.HostPort}:${port}</span><br>`;
+                    }
+                });
+            }
+        }
+        return html || '<span class="text-muted">No ports</span>';
+    }
+
+    function getStatusColor(status) {
+        switch (status) {
+            case 'running': return 'success';
+            case 'exited': return 'danger';
+            case 'paused': return 'warning';
+            default: return 'secondary';
+        }
+    }
+    
+    function getStatusIcon(status) {
+        switch (status) {
+            case 'running': return 'play';
+            case 'exited': return 'stop';
+            case 'paused': return 'pause';
+            default: return 'question';
+        }
+    }
+    
     // Container management functions
     async function refreshContainers() {
-        loadContainers();
+        await loadContainers();
+        showToast('Containers refreshed', 'success');
     }
     
     async function startContainer(name) {
         try {
             const result = await apiCall(`/api/container/${name}/start`, { method: 'POST' });
             showToast(result.message, 'success');
-            updateContainerStatus(name, 'running');
+            await loadContainers();
         } catch (error) {
             console.error('Error starting container:', error);
         }
@@ -243,7 +344,7 @@
         try {
             const result = await apiCall(`/api/container/${name}/stop`, { method: 'POST' });
             showToast(result.message, 'success');
-            updateContainerStatus(name, 'exited');
+            await loadContainers();
         } catch (error) {
             console.error('Error stopping container:', error);
         }
@@ -253,7 +354,7 @@
         try {
             const result = await apiCall(`/api/container/${name}/restart`, { method: 'POST' });
             showToast(result.message, 'success');
-            setTimeout(() => location.reload(), 2000);
+            await loadContainers();
         } catch (error) {
             console.error('Error restarting container:', error);
         }
@@ -270,7 +371,6 @@
             const modal = new bootstrap.Modal(document.getElementById('logsModal'));
             modal.show();
             
-            // Setup auto-refresh if enabled
             const autoRefresh = document.getElementById('autoRefreshLogs');
             if (autoRefresh.checked) {
                 startLogsAutoRefresh();
@@ -281,8 +381,6 @@
     }
     
     function connectRDP(name) {
-        // Get container port information
-        const containers = {{ containers|tojson }};
         const container = containers[name];
         
         if (container && container.ports) {
@@ -298,7 +396,6 @@
                 const rdpUrl = `rdp://localhost:${rdpPort}`;
                 showToast(`RDP connection available at localhost:${rdpPort}`, 'info');
                 
-                // Try to open RDP client (this may not work in all browsers)
                 try {
                     window.open(rdpUrl);
                 } catch (e) {
@@ -312,7 +409,6 @@
     
     // Bulk operations
     async function startAllContainers() {
-        const containers = {{ containers|tojson }};
         const stoppedContainers = Object.values(containers).filter(c => c.status !== 'running');
         
         if (stoppedContainers.length === 0) {
@@ -329,11 +425,10 @@
         }
         
         showToast(`Started ${stoppedContainers.length} containers`, 'success');
-        setTimeout(() => location.reload(), 2000);
+        await loadContainers();
     }
     
     async function stopAllContainers() {
-        const containers = {{ containers|tojson }};
         const runningContainers = Object.values(containers).filter(c => c.status === 'running');
         
         if (runningContainers.length === 0) {
@@ -350,11 +445,10 @@
         }
         
         showToast(`Stopped ${runningContainers.length} containers`, 'success');
-        setTimeout(() => location.reload(), 2000);
+        await loadContainers();
     }
     
     async function restartAllContainers() {
-        const containers = {{ containers|tojson }};
         const runningContainers = Object.values(containers).filter(c => c.status === 'running');
         
         if (runningContainers.length === 0) {
@@ -371,16 +465,47 @@
         }
         
         showToast(`Restarted ${runningContainers.length} containers`, 'success');
-        setTimeout(() => location.reload(), 3000);
+        await loadContainers();
     }
     
-    // Helper functions
-    function updateContainerStatus(name, status) {
-        const row = document.querySelector(`tr[data-container="${name}"]`);
-        if (row) {
-            const statusBadge = row.querySelector('.status-badge');
-            statusBadge.className = `badge bg-${status === 'running' ? 'success' : 'danger'} status-badge`;
-            statusBadge.innerHTML = `<i class="fas fa-${status === 'running' ? 'play' : 'stop'}"></i> ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+    // Create container functions
+    function showCreateContainer() {
+        const modal = new bootstrap.Modal(document.getElementById('createContainerModal'));
+        modal.show();
+    }
+    
+    async function createContainer() {
+        const form = document.getElementById('createContainerForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const data = {
+            name: document.getElementById('containerName').value,
+            user: document.getElementById('containerUser').value,
+            password: document.getElementById('containerPassword').value,
+            template: document.getElementById('containerTemplate').value
+        };
+        
+        try {
+            const result = await apiCall('/api/instances/create', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            
+            showToast(result.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('createContainerModal')).hide();
+            form.reset();
+            await loadContainers();
+        } catch (error) {
+            console.error('Error creating container:', error);
+        }
+    }
+    
+    async function cleanupContainers() {
+        if (confirm('This will remove all stopped containers. Are you sure?')) {
+            showToast('Cleanup functionality would be implemented here', 'info');
         }
     }
     
@@ -425,144 +550,5 @@
         }
         currentLogsContainer = '';
     });
-    
-    // Create container functions
-    function showCreateContainer() {
-        const modal = new bootstrap.Modal(document.getElementById('createContainerModal'));
-        modal.show();
-    }
-    
-    async function createContainer() {
-        const form = document.getElementById('createContainerForm');
-        const formData = new FormData(form);
-        
-        const data = {
-            name: document.getElementById('containerName').value,
-            user: document.getElementById('containerUser').value,
-            password: document.getElementById('containerPassword').value,
-            template: document.getElementById('containerTemplate').value
-        };
-        
-        try {
-            const result = await apiCall('/api/instances/create', {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
-            
-            showToast(result.message, 'success');
-            bootstrap.Modal.getInstance(document.getElementById('createContainerModal')).hide();
-            setTimeout(() => location.reload(), 2000);
-        } catch (error) {
-            console.error('Error creating container:', error);
-        }
-    }
-    
-    async function cleanupContainers() {
-        if (confirm('This will remove all stopped containers. Are you sure?')) {
-            showToast('Cleanup functionality would be implemented here', 'info');
-        }
-    }
-
-    async function loadContainers() {
-        try {
-            const response = await fetch('/api/containers');
-            const result = await response.json();
-            console.log('[DEBUG] /api/containers result:', result);
-            
-            // Handle both response formats: direct containers object or {status, containers} object
-            const containers = result.containers || result || {};
-            console.log('[DEBUG] Processed containers:', containers);
-            
-            updateContainersTable(containers);
-        } catch (error) {
-            console.error('[DEBUG] Error loading containers:', error);
-            // Show error message to user
-            const tbody = document.getElementById('containersTableBody');
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="8" class="text-center text-danger">
-                        <i class="fas fa-exclamation-triangle"></i> Error loading containers. Please check the console for details.
-                    </td>
-                </tr>`;
-        }
-    }
-
-    function formatDateTime(dateString) {
-        if (!dateString) return 'Unknown';
-        const d = new Date(dateString);
-        if (isNaN(d.getTime())) return dateString;
-        const pad = n => n.toString().padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    }
-
-    function updateContainersTable(containers) {
-        const tbody = document.getElementById('containersTableBody');
-        tbody.innerHTML = '';
-        const host = window.location.hostname;
-        const containerList = Object.values(containers);
-        console.log('[DEBUG] updateContainersTable: containerList:', containerList);
-        if (containerList.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No containers found.</td></tr>`;
-            return;
-        }
-        containerList.forEach(container => {
-            console.log('[DEBUG] Rendering container:', container);
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><strong>${container.name}</strong></td>
-                <td><span class="badge bg-${getStatusColor(container.status)}"><i class="fas fa-${getStatusIcon(container.status)}"></i> ${container.status}</span></td>
-                <td><code>${container.image}</code></td>
-                <td><span title="${container.created}">${formatDateTime(container.created)}</span></td>
-                <td>${formatPorts(container.ports)}</td>
-                <td class="cpu-usage">${container.cpu_percent !== undefined ? `${container.cpu_percent.toFixed(1)}%` : '<span class="text-muted">-</span>'}</td>
-                <td class="memory-usage">${container.memory_usage && container.memory_limit ? `${((container.memory_usage / container.memory_limit) * 100).toFixed(1)}%<br><small class='text-muted'>${(container.memory_usage / 1024 / 1024).toFixed(1)}MB</small>` : '<span class="text-muted">-</span>'}</td>
-                <td>
-                    <div class="btn-group" role="group">
-                        ${container.status === 'running' ? `
-                            <button class="btn btn-sm btn-warning" onclick="stopContainer('${container.name}')" title="Stop"><i class="fas fa-stop"></i></button>
-                            <button class="btn btn-sm btn-info" onclick="restartContainer('${container.name}')" title="Restart"><i class="fas fa-redo"></i></button>
-                        ` : `
-                            <button class="btn btn-sm btn-success" onclick="startContainer('${container.name}')" title="Start"><i class="fas fa-play"></i></button>
-                        `}
-                        <button class="btn btn-sm btn-secondary" onclick="viewLogs('${container.name}')" title="View Logs"><i class="fas fa-file-alt"></i></button>
-                        <button class="btn btn-sm btn-primary" onclick="connectRDP('${container.name}')" title="Connect RDP"><i class="fas fa-desktop"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-
-    function formatPorts(ports) {
-        if (!ports || Object.keys(ports).length === 0) return '<span class="text-muted">No ports</span>';
-        let html = '';
-        for (const [port, bindings] of Object.entries(ports)) {
-            if (bindings) {
-                bindings.forEach(binding => {
-                    if (binding && binding.HostPort) {
-                        html += `<span class="badge bg-info">${binding.HostPort}:${port}</span><br>`;
-                    }
-                });
-            }
-        }
-        return html || '<span class="text-muted">No ports</span>';
-    }
-
-    function getStatusColor(status) {
-        switch (status) {
-            case 'running': return 'success';
-            case 'exited': return 'danger';
-            case 'paused': return 'warning';
-            default: return 'secondary';
-        }
-    }
-    function getStatusIcon(status) {
-        switch (status) {
-            case 'running': return 'play';
-            case 'exited': return 'stop';
-            case 'paused': return 'pause';
-            default: return 'question';
-        }
-    }
 </script>
 {% endblock %}

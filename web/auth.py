@@ -23,7 +23,7 @@ class AuthManager:
         # Default admin user if not configured
         if 'ADMIN_USERNAME' not in app.config:
             app.config['ADMIN_USERNAME'] = 'admin'
-            app.config['ADMIN_PASSWORD_HASH'] = generate_password_hash('admin')
+            app.config['ADMIN_PASSWORD_HASH'] = generate_password_hash(secrets.token_urlsafe(16))
     
     def login_required(self, f):
         """Decorator to require authentication for a route"""

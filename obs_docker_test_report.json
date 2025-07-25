@@ -1,0 +1,209 @@
+{
+  "pages": {
+    "Dashboard": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 12255
+    },
+    "Instances": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 29792
+    },
+    "Containers": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 13675
+    },
+    "Images": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 13851
+    },
+    "Plugins": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 11722
+    },
+    "Monitoring": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 16449
+    },
+    "Backups": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 18998
+    },
+    "Settings": {
+      "status_code": 200,
+      "accessible": true,
+      "content_type": "text/html; charset=utf-8",
+      "size": 23296
+    }
+  },
+  "api_endpoints": {
+    "System Stats": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "stats": {
+          "cpu_percent": 2.6,
+          "disk": {
+            "free": 0,
+            "total": 0,
+            "used": 0
+          },
+          "memory": {
+            "available": 1794404352,
+            "free": 1794404352,
+            "percent": 89.5,
+            "total": 17097748480,
+            "used": 15303344128
+          },
+          "network": {
+            "bytes_recv": 3454153139,
+            "bytes_sent": 57230654,
+            "dropin": 0,
+            "dropout": 0,
+            "errin": 0,
+            "errout": 0,
+            "packets_recv": 2498236,
+            "packets_sent": 609810
+          },
+          "timestamp": "2025-07-25T22:51:21.397183"
+        },
+        "status": "success"
+      }
+    },
+    "System Info": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "info": {
+          "docker_available": true,
+          "platform": "Windows-11-10.0.22631-SP0",
+          "python_version": "3.13.2",
+          "timestamp": "2025-07-25T22:51:24.601606"
+        },
+        "status": "success"
+      }
+    },
+    "Containers": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "containers": {},
+        "status": "success"
+      }
+    },
+    "Instances": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "count": 0,
+        "instances": {},
+        "status": "success"
+      }
+    },
+    "Images": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "images": [],
+        "status": "success"
+      }
+    },
+    "Plugins": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "plugins": [
+          {
+            "name": "obs-webrtc",
+            "status": "available",
+            "version": "1.0.0"
+          },
+          {
+            "name": "noise-suppression",
+            "status": "available",
+            "version": "2.1.0"
+          },
+          {
+            "name": "source-record",
+            "status": "available",
+            "version": "1.5.0"
+          }
+        ],
+        "status": "success"
+      }
+    },
+    "Backups": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "backups": [
+          {
+            "created": "2024-01-20T10:30:00Z",
+            "name": "backup-20240120-full.tar.gz",
+            "size": "1.2GB"
+          },
+          {
+            "created": "2024-01-19T10:30:00Z",
+            "name": "backup-20240119-incremental.tar.gz",
+            "size": "256MB"
+          }
+        ],
+        "status": "success"
+      }
+    },
+    "Performance Profiles": {
+      "status_code": 200,
+      "accessible": true,
+      "has_valid_json": true,
+      "response_data": {
+        "profiles": [
+          {
+            "description": "Optimized for live streaming",
+            "name": "streaming"
+          },
+          {
+            "description": "High-quality local recording",
+            "name": "recording"
+          },
+          {
+            "description": "Minimal resource usage",
+            "name": "low-resource"
+          },
+          {
+            "description": "Hardware acceleration enabled",
+            "name": "gpu-accelerated"
+          }
+        ],
+        "status": "success"
+      }
+    }
+  },
+  "functionality": {
+    "docker_connectivity": true,
+    "static_files": true,
+    "instance_creation": false
+  },
+  "errors": [
+    "Instance creation returned 404"
+  ]
+}

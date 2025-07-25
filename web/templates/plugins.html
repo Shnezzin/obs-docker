@@ -112,7 +112,7 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
     let plugins = {};
     
@@ -123,7 +123,7 @@
     async function loadPlugins() {
         try {
             const result = await apiCall('/api/plugins');
-            plugins = result;
+            plugins = result.plugins || result || {};
             updatePluginsGrid();
         } catch (error) {
             console.error('Error loading plugins:', error);

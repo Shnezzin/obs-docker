@@ -1,262 +1,122 @@
 #!/usr/bin/env python3
 """
-Subprocess-based Docker Client
-Alternative implementation using Docker CLI instead of Python library
+Docker Subprocess Client
+Provides a Docker client implementation using subprocess calls to the docker CLI
 """
 
 import subprocess
 import json
-import time
-from datetime import datetime
 
 class DockerSubprocessClient:
-    """Docker client using subprocess calls to docker CLI"""
+    """A Docker client that uses the `docker` command-line tool"""
     
     def __init__(self):
-        self.available = self._check_docker_available()
+        self.available = self._check_docker_cli()
     
-    def _check_docker_available(self):
-        """Check if Docker CLI is available"""
+    def _check_docker_cli(self):
+        """Check if the `docker` CLI is available"""
         try:
-            result = subprocess.run(['docker', 'version', '--format', 'json'], 
-                                  capture_output=True, text=True, timeout=10)
-            return result.returncode == 0
-        except Exception:
+            subprocess.run(['docker', '--version'], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
             return False
     
     def ping(self):
         """Test Docker daemon connectivity"""
-        if not self.available:
-            raise Exception("Docker CLI not available")
-        
-        result = subprocess.run(['docker', 'version'], 
-                              capture_output=True, text=True, timeout=10)
-        if result.returncode != 0:
-            raise Exception(f"Docker ping failed: {result.stderr}")
-        return True
+        try:
+            subprocess.run(['docker', 'info'], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
     
     def version(self):
-        """Get Docker version information"""
-        # Try JSON format first
-        result = subprocess.run(['docker', 'version', '--format', 'json'], 
-                              capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and result.stdout.strip():
-            try:
-                return json.loads(result.stdout)
-            except json.JSONDecodeError:
-                pass
-        
-        # Fallback to plain text parsing
-        result = subprocess.run(['docker', 'version'], 
-                              capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            # Parse version from plain text output
-            lines = result.stdout.split('\n')
-            version_info = {"Client": {}, "Server": {}}
-            current_section = None
-            
-            for line in lines:
-                line = line.strip()
-                if 'Client:' in line:
-                    current_section = 'Client'
-                elif 'Server:' in line:
-                    current_section = 'Server'
-                elif 'Version:' in line and current_section:
-                    version = line.split('Version:')[1].strip()
-                    version_info[current_section]['Version'] = version
-            
-            return version_info
-        else:
-            return {"Client": {"Version": "Unknown"}, "Server": {"Version": "Unknown"}}
-    
-    def list_containers(self, all=False):
-        """List containers"""
-        # Verwende ausschließlich das Fallback-Parsing mit --format '{{json .}}'
-        cmd = ['docker', 'ps', '--format', '{{json .}}']
-        if all:
-            cmd.append('-a')
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            return []
-        containers = []
-        for line in result.stdout.strip().split('\n'):
-            if line.strip():
-                try:
-                    obj = json.loads(line)
-                    containers.append(obj)
-                except json.JSONDecodeError as e:
-                    continue
-        return containers
+        """Get Docker version"""
+        try:
+            result = subprocess.run(['docker', 'version', '--format', 'json'], capture_output=True, text=True, check=True)
+            return json.loads(result.stdout)
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            return {"Version": "Unknown"}
     
     def create_container(self, image, name, ports=None, environment=None, volumes=None, network=None, labels=None):
-        """Create a new container"""
-        cmd = ['docker', 'run', '-d', '--name', name]
+        """Create a container"""
+        cmd = ['docker', 'create', '--name', name]
         
-        # Add ports
         if ports:
-            for container_port, host_port in ports.items():
-                if host_port:
-                    cmd.extend(['-p', f'{host_port}:{container_port}'])
-                else:
-                    cmd.extend(['-p', container_port])
+            for host_port, container_port in ports.items():
+                cmd.extend(['-p', f'{host_port}:{container_port}'])
         
-        # Add environment variables
         if environment:
             for key, value in environment.items():
                 cmd.extend(['-e', f'{key}={value}'])
         
-        # Add volumes
         if volumes:
-            for volume_name, mount_info in volumes.items():
-                if isinstance(mount_info, dict):
-                    bind_path = mount_info.get('bind')
-                    mode = mount_info.get('mode', 'rw')
-                    cmd.extend(['-v', f'{volume_name}:{bind_path}:{mode}'])
-                else:
-                    cmd.extend(['-v', f'{volume_name}:{mount_info}'])
+            for host_path, container_path in volumes.items():
+                cmd.extend(['-v', f'{host_path}:{container_path}'])
         
-        # Add network
         if network:
             cmd.extend(['--network', network])
         
-        # Add labels
         if labels:
             for key, value in labels.items():
                 cmd.extend(['--label', f'{key}={value}'])
         
-        # Add restart policy
-        cmd.extend(['--restart', 'unless-stopped'])
-        
-        # Add image
         cmd.append(image)
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode == 0:
-            container_id = result.stdout.strip()
-            return {
-                'id': container_id,
-                'name': name,
-                'status': 'running',
-                'created': datetime.now().isoformat()
-            }
-        else:
-            raise Exception(f"Container creation failed: {result.stderr}")
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+            return self.get_container_info(name)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to create container: {e.stderr.decode()}")
+    
+    def get_container_info(self, name):
+        """Get information about a container"""
+        try:
+            result = subprocess.run(['docker', 'inspect', name], capture_output=True, text=True, check=True)
+            return json.loads(result.stdout)[0]
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            return None
+    
+    def list_containers(self, all=False):
+        """List containers"""
+        cmd = ['docker', 'ps', '--format', 'json']
+        if all:
+            cmd.append('-a')
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # The output of docker ps --format json is a list of json objects, one per line
+            return [json.loads(line) for line in result.stdout.strip().split('\n')]
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            return []
     
     def start_container(self, name):
         """Start a container"""
-        result = subprocess.run(['docker', 'start', name], 
-                              capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise Exception(f"Container start failed: {result.stderr}")
-        return True
+        try:
+            subprocess.run(['docker', 'start', name], capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to start container: {e.stderr.decode()}")
     
     def stop_container(self, name):
         """Stop a container"""
-        result = subprocess.run(['docker', 'stop', name], 
-                              capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise Exception(f"Container stop failed: {result.stderr}")
-        return True
+        try:
+            subprocess.run(['docker', 'stop', name], capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to stop container: {e.stderr.decode()}")
     
     def restart_container(self, name):
         """Restart a container"""
-        result = subprocess.run(['docker', 'restart', name], 
-                              capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise Exception(f"Container restart failed: {result.stderr}")
-        return True
+        try:
+            subprocess.run(['docker', 'restart', name], capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to restart container: {e.stderr.decode()}")
     
-    def remove_container(self, name, force=False, volumes=False):
+    def remove_container(self, name, volumes=False):
         """Remove a container"""
-        cmd = ['docker', 'rm']
-        if force:
-            cmd.append('-f')
+        cmd = ['docker', 'rm', name]
         if volumes:
             cmd.append('-v')
-        cmd.append(name)
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise Exception(f"Container removal failed: {result.stderr}")
-        return True
-        
-    def get_container(self, name):
-        """Get container by name or ID"""
-        # First try to get by name
-        result = subprocess.run(
-            ['docker', 'inspect', '--format', '{{json .}}', name],
-            capture_output=True, text=True, timeout=10
-        )
-        
-        if result.returncode == 0 and result.stdout.strip():
-            try:
-                container_info = json.loads(result.stdout)
-                if isinstance(container_info, list):
-                    container_info = container_info[0]  # Take first match if multiple
-                return container_info
-            except (json.JSONDecodeError, IndexError):
-                pass
-                
-        # If not found by name, try listing all containers and filter by name
-        containers = self.list_containers(all=True)
-        for container in containers:
-            if container.get('Names', '').lstrip('/') == name or container.get('ID', '').startswith(name):
-                # Get full container details
-                return self.get_container(container['ID'])
-                
-        # If we get here, container doesn't exist
-        return None
-    
-    def get_container_info(self, name):
-        """Get detailed container information"""
-        result = subprocess.run(['docker', 'inspect', name], 
-                              capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            try:
-                return json.loads(result.stdout)[0]
-            except (json.JSONDecodeError, IndexError):
-                return {}
-        return {}
-    
-    def container_exists(self, name):
-        """Check if container exists"""
-        result = subprocess.run(['docker', 'inspect', name], 
-                              capture_output=True, text=True, timeout=10)
-        return result.returncode == 0
-
-def test_subprocess_client():
-    """Test the subprocess-based Docker client"""
-    print("🐳 Testing Subprocess Docker Client")
-    print("=" * 40)
-    
-    client = DockerSubprocessClient()
-    
-    if not client.available:
-        print("❌ Docker CLI not available")
-        return False
-    
-    try:
-        # Test ping
-        client.ping()
-        print("✅ Docker ping successful")
-        
-        # Test version
-        version = client.version()
-        print(f"✅ Docker version: {version.get('Client', {}).get('Version', 'Unknown')}")
-        
-        # Test container listing
-        containers = client.list_containers(all=True)
-        print(f"✅ Container listing successful - found {len(containers)} containers")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Subprocess client failed: {e}")
-        return False
-
-if __name__ == "__main__":
-    success = test_subprocess_client()
-    if success:
-        print("\n🎉 Subprocess Docker client is working!")
-    else:
-        print("\n💥 Subprocess Docker client failed")
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to remove container: {e.stderr.decode()}")
