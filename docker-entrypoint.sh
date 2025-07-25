@@ -152,41 +152,30 @@ max_bpp=24
 EOF
 
     # Health check: verify critical services can start
-    log "Performing pre-start health checks"
-    if ! pgrep -f dbus > /dev/null 2>&1; then
-        log "Starting D-Bus for health check"
-        sudo service dbus start || log "WARNING: D-Bus service check failed"
-    fi
+log "Performing pre-start health checks"
+if ! pgrep -f dbus > /dev/null 2>&1; then
+    log "Starting D-Bus for health check"
+    service dbus start || log "WARNING: D-Bus service check failed"
+fi
 
-    # VNC-Passwort immer non-interaktiv setzen
-    mkdir -p /home/$USER/.vnc
-    chown $USER:$GROUP /home/$USER/.vnc
-    chmod 700 /home/$USER/.vnc
-    echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
-    chown $USER:$GROUP /home/$USER/.vnc/passwd
-    chmod 600 /home/$USER/.vnc/passwd
+# Set VNC password non-interactively
+log "Setting up VNC server"
+mkdir -p /home/$USER/.vnc
+chown $USER:$GROUP /home/$USER/.vnc
+chmod 700 /home/$USER/.vnc
+echo "$PASSWD" | vncpasswd -f > /home/$USER/.vnc/passwd
+chown $USER:$GROUP /home/$USER/.vnc/passwd
+chmod 600 /home/$USER/.vnc/passwd
 
-    # Ensure .xsession exists and is correct
-    if [[ ! -e /home/$USER/.xsession ]]; then
-        echo "startlxde" > /home/$USER/.xsession
-        chown $USER:$GROUP /home/$USER/.xsession
-        chmod 644 /home/$USER/.xsession
-    fi
+# Start VNC server as user if not running
+if ! pgrep -u $USER Xtightvnc > /dev/null 2>&1; then
+    log "Starting VNC server"
+    sudo -u $USER vncserver :1 -geometry 1920x1080 -depth 24 || log "WARNING: VNC server failed to start"
+fi
 
-    # Start VNC server as user (falls nicht läuft)
-    if ! pgrep -u $USER Xtightvnc > /dev/null 2>&1; then
-        sudo -u $USER vncserver :1 -geometry 1920x1080 -depth 24
-    fi
-
-    # Starte supervisor (managt xrdp, dbus)
-    exec /usr/bin/supervisord -c /etc/supervisor/xrdp.conf
-
+# Set default command if none provided
+if [ $# -eq 0 ]; then
     set -- /usr/bin/supervisord -c /etc/supervisor/xrdp.conf
-    if [[ $USER_ID != "0" ]]; then
-        [[ ! -e /usr/local/bin/_alt-su ]] && \
-            sudo install -g $GROUP_ID -m 4750 $(which gosu || which su-exec) /usr/local/bin/_alt-su
-        set -- /usr/local/bin/_alt-su root "$@"
-    fi
 fi
 # Clear sensitive variables
 unset PASSWD
