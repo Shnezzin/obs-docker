@@ -504,8 +504,16 @@
     }
     
     async function cleanupContainers() {
-        if (confirm('This will remove all stopped containers. Are you sure?')) {
-            showToast('Cleanup functionality would be implemented here', 'info');
+        if (!confirm('This will remove all stopped containers. Are you sure?')) {
+            return;
+        }
+
+        try {
+            const result = await apiCall('/api/containers/cleanup', { method: 'POST' });
+            showToast(result.message, 'success');
+            loadContainers();
+        } catch (error) {
+            console.error('Error cleaning up containers:', error);
         }
     }
     

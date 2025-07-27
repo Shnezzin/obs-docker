@@ -48,6 +48,42 @@
     </div>
 </div>
 
+<!-- Image Details Modal -->
+<div class="modal fade" id="imageDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Image Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="imageDetailsBody">
+                <!-- Details will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1" aria-labelledby="logModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logModalLabel">Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="logContent" class="bg-dark text-white p-3 rounded" style="max-height: 400px; overflow-y: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Pull Image Modal -->
 <div class="modal fade" id="pullImageModal" tabindex="-1">
     <div class="modal-dialog">
@@ -171,8 +207,24 @@
     }
 
     function viewImageDetails(imageId) {
-        showToast(`Image details for ${imageId} would be displayed here`, 'info');
-        // In a real implementation, this would show detailed image information
+        const modal = new bootstrap.Modal(document.getElementById('imageDetailsModal'));
+        const modalBody = document.getElementById('imageDetailsBody');
+        modalBody.innerHTML = '<p>Loading image details...</p>';
+        modal.show();
+
+        apiCall(`/api/images/${imageId}`)
+            .then(data => {
+                const details = data.details;
+                let detailsHtml = '<dl class="row">';
+                for (const [key, value] of Object.entries(details)) {
+                    detailsHtml += `<dt class="col-sm-3">${key}</dt><dd class="col-sm-9">${JSON.stringify(value, null, 2)}</dd>`;
+                }
+                detailsHtml += '</dl>';
+                modalBody.innerHTML = detailsHtml;
+            })
+            .catch(error => {
+                modalBody.innerHTML = `<p class="text-danger">Error loading image details: ${error.message}</p>`;
+            });
     }
 
     function showPullImage() {
@@ -189,23 +241,40 @@
 
         const imageName = document.getElementById('imageName').value;
         const imageTag = document.getElementById('imageTag').value || 'latest';
-        
+
+        const pullModal = bootstrap.Modal.getInstance(document.getElementById('pullImageModal'));
+        pullModal.hide();
+
+        const logModal = new bootstrap.Modal(document.getElementById('logModal'));
+        const logContent = document.getElementById('logContent');
+        document.getElementById('logModalLabel').innerText = `Pulling ${imageName}:${imageTag}`;
+        logContent.innerHTML = '';
+        logModal.show();
+
         try {
-            showToast(`Pulling ${imageName}:${imageTag}...`, 'info');
-            
-            // Mock pull - in real implementation this would pull the image
-            const result = await apiCall('/api/images/pull', {
+            const response = await fetch('/api/images/pull', {
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': getCSRFToken()
+                },
                 body: JSON.stringify({ image: imageName, tag: imageTag })
             });
-            
-            showToast(result.message || `Successfully pulled ${imageName}:${imageTag}`, 'success');
-            
-            // Close modal and refresh
-            bootstrap.Modal.getInstance(document.getElementById('pullImageModal')).hide();
-            form.reset();
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                logContent.innerHTML += decoder.decode(value, { stream: true });
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+
+            showToast('Image pull complete', 'success');
             await loadImages();
         } catch (error) {
+            logContent.innerHTML += `\n<span class="text-danger">Error: ${error.message}</span>`;
             console.error('Error pulling image:', error);
         }
     }

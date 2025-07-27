@@ -154,49 +154,59 @@
         </div>
     </div>
 
-    <!-- Cloud Integration -->
+    <!-- Cloud Backup Settings -->
     <div class="col-md-6 mb-4">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">Cloud Integration</h5>
+                <h5 class="mb-0">Cloud Backup Storage</h5>
             </div>
             <div class="card-body">
-                <form id="cloudSettingsForm">
+                <form id="cloudBackupSettingsForm">
                     <div class="mb-3">
-                        <label for="cloudProvider" class="form-label">Cloud Provider</label>
-                        <select class="form-select" id="cloudProvider">
+                        <label for="cloudBackupProvider" class="form-label">Cloud Provider</label>
+                        <select class="form-select" id="cloudBackupProvider">
                             <option value="">None</option>
                             <option value="aws">Amazon S3</option>
                             <option value="gcp">Google Cloud Storage</option>
                             <option value="azure">Azure Blob Storage</option>
                         </select>
                     </div>
-                    <div class="mb-3" id="awsSettings" style="display: none;">
-                        <label for="awsBucket" class="form-label">S3 Bucket Name</label>
-                        <input type="text" class="form-control" id="awsBucket" placeholder="my-obs-bucket">
-                    </div>
-                    <div class="mb-3" id="gcpSettings" style="display: none;">
-                        <label for="gcpBucket" class="form-label">GCS Bucket Name</label>
-                        <input type="text" class="form-control" id="gcpBucket" placeholder="my-obs-bucket">
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="autoUpload">
-                            <label class="form-check-label" for="autoUpload">
-                                Auto-upload Recordings
-                            </label>
+                    <div id="awsBackupSettings" style="display: none;">
+                        <div class="mb-3">
+                            <label for="awsBackupBucket" class="form-label">S3 Bucket Name</label>
+                            <input type="text" class="form-control" id="awsBackupBucket" placeholder="my-obs-backups">
+                        </div>
+                        <div class="mb-3">
+                            <label for="awsAccessKey" class="form-label">AWS Access Key ID</label>
+                            <input type="text" class="form-control" id="awsAccessKey">
+                        </div>
+                        <div class="mb-3">
+                            <label for="awsSecretKey" class="form-label">AWS Secret Access Key</label>
+                            <input type="password" class="form-control" id="awsSecretKey">
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="backupConfigs">
-                            <label class="form-check-label" for="backupConfigs">
-                                Backup Configurations to Cloud
-                            </label>
+                    <div id="gcpBackupSettings" style="display: none;">
+                        <div class="mb-3">
+                            <label for="gcpBackupBucket" class="form-label">GCS Bucket Name</label>
+                            <input type="text" class="form-control" id="gcpBackupBucket" placeholder="my-obs-backups">
+                        </div>
+                        <div class="mb-3">
+                            <label for="gcpCredentials" class="form-label">GCP Credentials (JSON)</label>
+                            <textarea class="form-control" id="gcpCredentials" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div id="azureBackupSettings" style="display: none;">
+                        <div class="mb-3">
+                            <label for="azureStorageAccount" class="form-label">Azure Storage Account</label>
+                            <input type="text" class="form-control" id="azureStorageAccount">
+                        </div>
+                        <div class="mb-3">
+                            <label for="azureStorageKey" class="form-label">Azure Storage Key</label>
+                            <input type="password" class="form-control" id="azureStorageKey">
                         </div>
                     </div>
                 </form>
-                <button class="btn btn-primary" onclick="saveCloudSettings()">Save Cloud Settings</button>
+                <button class="btn btn-primary" onclick="saveCloudBackupSettings()">Save Cloud Backup Settings</button>
             </div>
         </div>
     </div>
@@ -246,6 +256,10 @@
                                 Encrypt Backups
                             </label>
                         </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="backupPath" class="form-label">Backup Storage Path</label>
+                        <input type="text" class="form-control" id="backupPath" placeholder="/path/to/backups">
                     </div>
                 </form>
                 <button class="btn btn-primary" onclick="saveBackupSettings()">Save Backup Settings</button>
@@ -382,6 +396,16 @@
             awsSettings.style.display = this.value === 'aws' ? 'block' : 'none';
             gcpSettings.style.display = this.value === 'gcp' ? 'block' : 'none';
         });
+
+        document.getElementById('cloudBackupProvider').addEventListener('change', function() {
+            const awsSettings = document.getElementById('awsBackupSettings');
+            const gcpSettings = document.getElementById('gcpBackupSettings');
+            const azureSettings = document.getElementById('azureBackupSettings');
+            
+            awsSettings.style.display = this.value === 'aws' ? 'block' : 'none';
+            gcpSettings.style.display = this.value === 'gcp' ? 'block' : 'none';
+            azureSettings.style.display = this.value === 'azure' ? 'block' : 'none';
+        });
     }
     
     async function loadSystemInfo() {
@@ -503,7 +527,8 @@
             frequency: document.getElementById('backupFrequency').value,
             retention: document.getElementById('retentionPeriod').value,
             compress: document.getElementById('compressBackups').checked,
-            encrypt: document.getElementById('encryptBackups').checked
+            encrypt: document.getElementById('encryptBackups').checked,
+            backupPath: document.getElementById('backupPath').value
         };
         
         try {
@@ -515,6 +540,29 @@
             showToast('Backup settings saved successfully', 'success');
         } catch (error) {
             console.error('Error saving backup settings:', error);
+        }
+    }
+
+    async function saveCloudBackupSettings() {
+        const settings = {
+            provider: document.getElementById('cloudBackupProvider').value,
+            awsBucket: document.getElementById('awsBackupBucket').value,
+            awsAccessKey: document.getElementById('awsAccessKey').value,
+            awsSecretKey: document.getElementById('awsSecretKey').value,
+            gcpBucket: document.getElementById('gcpBackupBucket').value,
+            gcpCredentials: document.getElementById('gcpCredentials').value,
+            azureAccount: document.getElementById('azureStorageAccount').value,
+            azureKey: document.getElementById('azureStorageKey').value
+        };
+
+        try {
+            const result = await apiCall('/api/settings/cloud_backup', {
+                method: 'POST',
+                body: JSON.stringify(settings)
+            });
+            showToast('Cloud backup settings saved successfully', 'success');
+        } catch (error) {
+            console.error('Error saving cloud backup settings:', error);
         }
     }
     

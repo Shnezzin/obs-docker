@@ -319,8 +319,54 @@ if (typeof module !== 'undefined' && module.exports) {
         showToast,
         formatBytes,
         formatDateTime,
-        debounce
+        debounce,
+        startContainer,
+        stopContainer,
+        restartContainer,
+        viewLogs
     };
+}
+
+// Container management functions
+async function startContainer(name) {
+    try {
+        const result = await apiCall(`/api/container/${name}/start`, { method: 'POST' });
+        showToast(result.message, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } catch (error) {
+        console.error('Error starting container:', error);
+    }
+}
+
+async function stopContainer(name) {
+    try {
+        const result = await apiCall(`/api/container/${name}/stop`, { method: 'POST' });
+        showToast(result.message, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } catch (error) {
+        console.error('Error stopping container:', error);
+    }
+}
+
+async function restartContainer(name) {
+    try {
+        const result = await apiCall(`/api/container/${name}/restart`, { method: 'POST' });
+        showToast(result.message, 'success');
+        setTimeout(() => location.reload(), 1000);
+    } catch (error) {
+        console.error('Error restarting container:', error);
+    }
+}
+
+async function viewLogs(name) {
+    try {
+        const result = await apiCall(`/api/container/${name}/logs`);
+        document.getElementById('logsContent').textContent = result.logs;
+        const modal = new bootstrap.Modal(document.getElementById('logsModal'));
+        modal.show();
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+    }
 }
 
 // Initialize API helpers when DOM is ready

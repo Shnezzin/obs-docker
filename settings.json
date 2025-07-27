@@ -1,0 +1,22 @@
+{
+    "cloud_backup": {
+        "provider": "aws",
+        "awsBucket": "",
+        "awsAccessKey": "",
+        "awsSecretKey": "",
+        "gcpBucket": "",
+        "gcpCredentials": "",
+        "azureAccount": "",
+        "azureKey": "",
+        "csrf_token": "054a325a9e933e2467d947036d576a81f07a3e2a"
+    },
+    "backup": {
+        "enableScheduled": true,
+        "frequency": "daily",
+        "retention": "30",
+        "compress": true,
+        "encrypt": false,
+        "backupPath": "",
+        "csrf_token": "3da4d0a8fcfa980bb94302b32927bd14fd158a16"
+    }
+}

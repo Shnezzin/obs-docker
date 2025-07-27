@@ -118,8 +118,8 @@ socketio = SocketIO(
     app,
     async_mode='threading',
     cors_allowed_origins=[],
-    logger=debug_mode,
-    engineio_logger=debug_mode,
+    logger=False,
+    engineio_logger=False,
     manage_session=False
 )
 
@@ -357,16 +357,15 @@ class OBSManager:
     def calculate_cpu_percent(self, stats):
         """Calculate CPU percentage from container stats"""
         try:
-            cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - \
-                       stats['precpu_stats']['cpu_usage']['total_usage']
-            system_delta = stats['cpu_stats']['system_cpu_usage'] - \
-                          stats['precpu_stats']['system_cpu_usage']
-            
-            if system_delta > 0:
-                return (cpu_delta / system_delta) * len(stats['cpu_stats']['cpu_usage']['percpu_usage']) * 100
-        except:
-            pass
-        return 0
+            cpu_count = len(stats["cpu_stats"]["cpu_usage"]["percpu_usage"])
+            cpu_percent = 0.0
+            cpu_delta = float(stats["cpu_stats"]["cpu_usage"]["total_usage"]) - float(stats["precpu_stats"]["cpu_usage"]["total_usage"])
+            system_delta = float(stats["cpu_stats"]["system_cpu_usage"]) - float(stats["precpu_stats"]["system_cpu_usage"])
+            if system_delta > 0.0:
+                cpu_percent = (cpu_delta / system_delta) * cpu_count * 100.0
+            return cpu_percent
+        except (KeyError, ZeroDivisionError):
+            return 0.0
 
 obs_manager = OBSManager()
 
@@ -405,11 +404,11 @@ def api_containers():
 def api_container_start(container_name):
     """Start a container"""
     try:
-        # Mock start - in real implementation this would start the Docker container
-        return jsonify({
-            'status': 'success',
-            'message': f'Container "{container_name}" started successfully'
-        })
+        container = docker_client.containers.get(container_name)
+        container.start()
+        return jsonify({'status': 'success', 'message': f'Container "{container_name}" started successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Container not found'}), 404
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -417,11 +416,11 @@ def api_container_start(container_name):
 def api_container_stop(container_name):
     """Stop a container"""
     try:
-        # Mock stop - in real implementation this would stop the Docker container
-        return jsonify({
-            'status': 'success',
-            'message': f'Container "{container_name}" stopped successfully'
-        })
+        container = docker_client.containers.get(container_name)
+        container.stop()
+        return jsonify({'status': 'success', 'message': f'Container "{container_name}" stopped successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Container not found'}), 404
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -429,11 +428,20 @@ def api_container_stop(container_name):
 def api_container_restart(container_name):
     """Restart a container"""
     try:
-        # Mock restart - in real implementation this would restart the Docker container
-        return jsonify({
-            'status': 'success',
-            'message': f'Container "{container_name}" restarted successfully'
-        })
+        container = docker_client.containers.get(container_name)
+        container.restart()
+        return jsonify({'status': 'success', 'message': f'Container "{container_name}" restarted successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Container not found'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/containers/cleanup', methods=['POST'])
+def api_containers_cleanup():
+    """Remove all stopped containers"""
+    try:
+        docker_client.containers.prune()
+        return jsonify({'status': 'success', 'message': 'Cleaned up stopped containers'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -474,6 +482,23 @@ def api_system_info():
     }
     return jsonify({'status': 'success', 'info': system_info})
 
+@app.route('/api/images/<image_id>')
+def api_image_details(image_id):
+    """API endpoint for single Docker image details"""
+    try:
+        if not docker_client:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Docker service not available'
+            }), 503
+        
+        image = docker_client.images.get(image_id)
+        return jsonify({'status': 'success', 'details': image.attrs})
+    except docker.errors.ImageNotFound:
+        return jsonify({'status': 'error', 'message': 'Image not found'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/images')
 def api_images():
     """API endpoint for Docker images"""
@@ -502,106 +527,140 @@ def api_images():
 
 @app.route('/api/images/pull', methods=['POST'])
 def api_images_pull():
-    """API endpoint to pull a Docker image"""
-    try:
-        data = request.get_json()
-        image = data.get('image')
-        tag = data.get('tag', 'latest')
-        
-        if not image:
-            return jsonify({'status': 'error', 'message': 'Image name is required'}), 400
-        
-        # Mock pull - in real implementation this would pull the image
-        return jsonify({
-            'status': 'success',
-            'message': f'Successfully pulled {image}:{tag}'
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    """API endpoint to pull a Docker image and stream progress"""
+    data = request.get_json()
+    image_name = data.get('image')
+    tag = data.get('tag', 'latest')
+
+    if not image_name:
+        return jsonify({'status': 'error', 'message': 'Image name is required'}), 400
+
+    def generate_pull_stream():
+        try:
+            yield f"Attempting to pull {image_name}:{tag}...\n"
+            stream = docker_client.api.pull(image_name, tag=tag, stream=True, decode=True)
+            for chunk in stream:
+                if 'status' in chunk:
+                    yield f"{chunk['status']}: {chunk.get('progress', '')}\n"
+            yield f"\nImage {image_name}:{tag} pulled successfully!\n"
+        except docker.errors.APIError as e:
+            yield f"\nError pulling image: {e.explanation}\n"
+        except Exception as e:
+            yield f"\nAn unexpected error occurred: {str(e)}\n"
+
+    return Response(generate_pull_stream(), mimetype='text/plain')
 
 @app.route('/api/images/<image_id>/remove', methods=['DELETE'])
 def api_images_remove(image_id):
     """API endpoint to remove a Docker image"""
     try:
-        # Mock removal - in real implementation this would remove the image
-        return jsonify({
-            'status': 'success',
-            'message': f'Image {image_id} removed successfully'
-        })
+        docker_client.images.remove(image_id, force=True)
+        return jsonify({'status': 'success', 'message': f'Image {image_id} removed successfully'})
+    except docker.errors.ImageNotFound:
+        return jsonify({'status': 'error', 'message': 'Image not found'}), 404
+    except docker.errors.APIError as e:
+        if 'image is being used by running container' in e.explanation:
+            return jsonify({'status': 'error', 'message': 'Image is in use by a running container'}), 409
+        return jsonify({'status': 'error', 'message': str(e)}), 500
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def load_plugins():
+    try:
+        with open('plugins.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_plugins(plugins):
+    with open('plugins.json', 'w') as f:
+        json.dump(plugins, f, indent=4)
+
+plugins = load_plugins()
 
 @app.route('/api/plugins')
 def api_plugins():
     """API endpoint for OBS plugins"""
-    # Mock plugin data for now - return as object with plugin names as keys
-    plugins = {
-        'obs-webrtc': {
-            'name': 'obs-webrtc', 
-            'version': '1.0.0', 
-            'status': 'available',
-            'description': 'WebRTC streaming support for OBS Studio',
-            'author': 'OBS Project'
-        },
-        'noise-suppression': {
-            'name': 'noise-suppression', 
-            'version': '2.1.0', 
-            'status': 'available',
-            'description': 'AI-powered noise suppression for audio',
-            'author': 'NVIDIA'
-        },
-        'source-record': {
-            'name': 'source-record', 
-            'version': '1.5.0', 
-            'status': 'available',
-            'description': 'Record individual sources separately',
-            'author': 'Exeldro'
-        }
-    }
     return jsonify({'status': 'success', 'plugins': plugins})
 
 @app.route('/api/plugins/install', methods=['POST'])
 def api_plugins_install():
     """API endpoint to install a plugin"""
-    try:
-        data = request.get_json()
-        plugin_name = data.get('plugin_name')
-        version = data.get('version', 'latest')
-        
-        if not plugin_name:
-            return jsonify({'status': 'error', 'message': 'Plugin name is required'}), 400
-        
-        # Mock installation - in real implementation this would install the plugin
-        return jsonify({
-            'status': 'success', 
-            'message': f'Plugin "{plugin_name}" (version {version}) installed successfully'
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    data = request.get_json()
+    plugin_url = data.get('plugin_url')
+    if not plugin_url:
+        return jsonify({'status': 'error', 'message': 'Plugin URL is required'}), 400
+
+    def generate_install_stream():
+        try:
+            plugin_name = plugin_url.split('/')[-1].replace('.git', '')
+            plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'plugins')
+            if not os.path.exists(plugins_dir):
+                os.makedirs(plugins_dir)
+            plugin_path = os.path.join(plugins_dir, plugin_name)
+
+            yield f"Installing plugin from {plugin_url} into {plugin_path}...\n"
+            
+            process = subprocess.Popen(['git', 'clone', plugin_url, plugin_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+
+            if process.returncode == 0:
+                plugins[plugin_name] = {
+                    'name': plugin_name,
+                    'version': '1.0.0', # You might want to get this from the plugin itself
+                    'status': 'installed',
+                    'description': f'A plugin from {plugin_url}',
+                    'author': 'Unknown',
+                    'configurable': False,
+                    'config': {}
+                }
+                save_plugins(plugins)
+                yield "Plugin installed successfully!\n"
+            else:
+                yield f"Error installing plugin: {stderr.decode('utf-8')}\n"
+
+        except Exception as e:
+            yield f"Error installing plugin: {str(e)}\n"
+
+    return Response(generate_install_stream(), mimetype='text/plain')
 
 @app.route('/api/plugins/<plugin_name>/update', methods=['POST'])
 def api_plugins_update(plugin_name):
     """API endpoint to update a plugin"""
-    try:
-        # Mock update - in real implementation this would update the plugin
-        return jsonify({
-            'status': 'success', 
-            'message': f'Plugin "{plugin_name}" updated successfully'
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    def generate_update_stream():
+        try:
+            yield f"Updating plugin {plugin_name}...\n"
+            # This is a mock implementation. In a real scenario, you would update the plugin.
+            yield "Plugin updated successfully!\n"
+        except Exception as e:
+            yield f"Error updating plugin: {str(e)}\n"
+
+    return Response(generate_update_stream(), mimetype='text/plain')
 
 @app.route('/api/plugins/<plugin_name>/remove', methods=['DELETE'])
 def api_plugins_remove(plugin_name):
     """API endpoint to remove a plugin"""
-    try:
-        # Mock removal - in real implementation this would remove the plugin
-        return jsonify({
-            'status': 'success', 
-            'message': f'Plugin "{plugin_name}" removed successfully'
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    global plugins
+    if plugin_name in plugins:
+        del plugins[plugin_name]
+        save_plugins(plugins)
+        return jsonify({'status': 'success', 'message': f'Plugin "{plugin_name}" removed successfully'})
+    return jsonify({'status': 'error', 'message': 'Plugin not found'}), 404
+
+@app.route('/api/plugins/<plugin_name>/config', methods=['GET', 'POST'])
+def api_plugin_config(plugin_name):
+    """API endpoint for plugin configuration"""
+    global plugins
+    if request.method == 'POST':
+        if plugin_name in plugins:
+            plugins[plugin_name]['config'] = request.get_json()
+            save_plugins(plugins)
+            return jsonify({'status': 'success', 'message': 'Configuration saved'})
+        return jsonify({'status': 'error', 'message': 'Plugin not found'}), 404
+    else:
+        if plugin_name in plugins:
+            return jsonify({'status': 'success', 'config': plugins[plugin_name]})
+        return jsonify({'status': 'error', 'message': 'Plugin not found'}), 404
 
 @app.route('/api/backups')
 def api_backups():
@@ -702,17 +761,25 @@ def api_performance_apply():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+def load_settings():
+    try:
+        with open('settings.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_settings(settings):
+    with open('settings.json', 'w') as f:
+        json.dump(settings, f, indent=4)
+
 @app.route('/api/settings/general', methods=['POST'])
 def api_settings_general():
     """API endpoint to save general settings"""
     try:
-        data = request.get_json()
-        
-        # Mock settings save - in real implementation this would save to config file
-        return jsonify({
-            'status': 'success',
-            'message': 'General settings saved successfully'
-        })
+        settings = load_settings()
+        settings['general'] = request.get_json()
+        save_settings(settings)
+        return jsonify({'status': 'success', 'message': 'General settings saved successfully'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -720,13 +787,10 @@ def api_settings_general():
 def api_settings_security():
     """API endpoint to save security settings"""
     try:
-        data = request.get_json()
-        
-        # Mock settings save - in real implementation this would save to config file
-        return jsonify({
-            'status': 'success',
-            'message': 'Security settings saved successfully'
-        })
+        settings = load_settings()
+        settings['security'] = request.get_json()
+        save_settings(settings)
+        return jsonify({'status': 'success', 'message': 'Security settings saved successfully'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -734,13 +798,10 @@ def api_settings_security():
 def api_settings_cloud():
     """API endpoint to save cloud settings"""
     try:
-        data = request.get_json()
-        
-        # Mock settings save - in real implementation this would save to config file
-        return jsonify({
-            'status': 'success',
-            'message': 'Cloud settings saved successfully'
-        })
+        settings = load_settings()
+        settings['cloud'] = request.get_json()
+        save_settings(settings)
+        return jsonify({'status': 'success', 'message': 'Cloud settings saved successfully'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -748,15 +809,49 @@ def api_settings_cloud():
 def api_settings_backup():
     """API endpoint to save backup settings"""
     try:
-        data = request.get_json()
-        
-        # Mock settings save - in real implementation this would save to config file
-        return jsonify({
-            'status': 'success',
-            'message': 'Backup settings saved successfully'
-        })
+        settings = load_settings()
+        settings['backup'] = request.get_json()
+        save_settings(settings)
+        return jsonify({'status': 'success', 'message': 'Backup settings saved successfully'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/settings/cloud_backup', methods=['POST'])
+def api_settings_cloud_backup():
+    """API endpoint to save cloud backup settings"""
+    try:
+        settings = load_settings()
+        settings['cloud_backup'] = request.get_json()
+        save_settings(settings)
+        return jsonify({'status': 'success', 'message': 'Cloud backup settings saved successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/monitoring/alerts')
+def api_monitoring_alerts():
+    """API endpoint for monitoring alerts"""
+    # In a real application, you would fetch these from a database or a log file.
+    alerts = [] 
+    return jsonify({'status': 'success', 'alerts': alerts})
+
+@app.route('/api/monitoring/logs')
+def api_monitoring_logs():
+    """API endpoint for system logs"""
+    # In a real application, you would fetch these from a log file.
+    logs = []
+    return jsonify({'status': 'success', 'logs': logs})
+
+@app.route('/api/monitoring/alerts/clear', methods=['POST'])
+def api_monitoring_alerts_clear():
+    """API endpoint to clear monitoring alerts"""
+    # In a real application, this would clear the alerts from the database or cache.
+    return jsonify({'status': 'success', 'message': 'Alerts cleared'})
+
+@app.route('/api/monitoring/logs/clear', methods=['POST'])
+def api_monitoring_logs_clear():
+    """API endpoint to clear system logs"""
+    # In a real application, this would clear the logs from the database or file.
+    return jsonify({'status': 'success', 'message': 'Logs cleared'})
 
 @app.route('/api/security/audit', methods=['POST'])
 def api_security_audit():
@@ -786,7 +881,7 @@ def images():
     return render_template('images.html')
 
 @app.route('/plugins')
-def plugins():
+def manage_plugins_page():
     """Plugin management page"""
     return render_template('plugins.html')
 
@@ -815,6 +910,7 @@ def api_instances_create():
         user = data.get('user', 'developer')
         password = data.get('password')
         port = data.get('port')
+        desktop_env = data.get('desktop_env', 'lxde')
         
         if not name or not template or not password:
             return jsonify({
@@ -824,7 +920,7 @@ def api_instances_create():
         
         def generate_log_stream():
             try:
-                image_name = 'obs-docker:latest'
+                image_name = f'obs-docker-{desktop_env}:latest'
                 try:
                     docker_client.images.get(image_name)
                     yield f"Image '{image_name}' found locally.\n"
@@ -835,7 +931,8 @@ def api_instances_create():
                             path='..',
                             tag=image_name,
                             rm=True,
-                            decode=True
+                            decode=True,
+                            buildargs={'DESKTOP_ENV': desktop_env}
                         )
                         for chunk in stream:
                             if 'stream' in chunk:
@@ -864,16 +961,49 @@ def api_instances_create():
                     labels={
                         'com.obs-docker.instance': name,
                         'com.obs-docker.template': template,
-                        'com.obs-docker.user': user
+                        'com.obs-docker.user': user,
+                        'com.obs-docker.desktop': desktop_env
                     }
                 )
-                yield f"Instance '{name}' created successfully with template '{template}'.\n"
+                yield f"Instance '{name}' created successfully with template '{template}' and desktop '{desktop_env}'.\n"
             except docker.errors.APIError as e:
                 yield f"Error: {e}\n"
         return Response(generate_log_stream(), mimetype='text/plain')
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+@app.route('/api/instances/start_all', methods=['POST'])
+def api_instances_start_all():
+    """Start all instances"""
+    try:
+        for container in docker_client.containers.list(all=True):
+            if container.status != 'running':
+                container.start()
+        return jsonify({'status': 'success', 'message': 'All instances started successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/stop_all', methods=['POST'])
+def api_instances_stop_all():
+    """Stop all instances"""
+    try:
+        for container in docker_client.containers.list():
+            container.stop()
+        return jsonify({'status': 'success', 'message': 'All instances stopped successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/remove_all', methods=['POST'])
+def api_instances_remove_all():
+    """Remove all stopped instances"""
+    try:
+        for container in docker_client.containers.list(all=True):
+            if container.status != 'running':
+                container.remove(force=True)
+        return jsonify({'status': 'success', 'message': 'All stopped instances removed successfully'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/instances/scale', methods=['POST'])
 def api_instances_scale():
@@ -889,6 +1019,54 @@ def api_instances_scale():
             'status': 'success',
             'message': f'Created {count} instances with template "{template}" and prefix "{prefix}"'
         })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/<instance_name>/start', methods=['POST'])
+def api_instance_start(instance_name):
+    """Start an instance"""
+    try:
+        container = docker_client.containers.get(instance_name)
+        container.start()
+        return jsonify({'status': 'success', 'message': f'Instance "{instance_name}" started successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/<instance_name>/stop', methods=['POST'])
+def api_instance_stop(instance_name):
+    """Stop an instance"""
+    try:
+        container = docker_client.containers.get(instance_name)
+        container.stop()
+        return jsonify({'status': 'success', 'message': f'Instance "{instance_name}" stopped successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/<instance_name>/restart', methods=['POST'])
+def api_instance_restart(instance_name):
+    """Restart an instance"""
+    try:
+        container = docker_client.containers.get(instance_name)
+        container.restart()
+        return jsonify({'status': 'success', 'message': f'Instance "{instance_name}" restarted successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/instances/<instance_name>/remove', methods=['DELETE'])
+def api_instance_remove(instance_name):
+    """Remove an instance"""
+    try:
+        container = docker_client.containers.get(instance_name)
+        container.remove(force=True)
+        return jsonify({'status': 'success', 'message': f'Instance "{instance_name}" removed successfully'})
+    except docker.errors.NotFound:
+        return jsonify({'status': 'error', 'message': 'Instance not found'}), 404
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

@@ -143,6 +143,15 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label for="desktopEnv" class="form-label">Desktop Environment</label>
+                        <select class="form-select" id="desktopEnv">
+                            <option value="lxde">LXDE</option>
+                            <option value="xfce">XFCE</option>
+                            <option value="kde">KDE</option>
+                            <option value="gnome">GNOME</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label for="instanceUser" class="form-label">Username</label>
                         <input type="text" class="form-control" id="instanceUser" value="developer" required>
                     </div>
@@ -361,7 +370,8 @@
             template: document.getElementById('instanceTemplate').value,
             user: document.getElementById('instanceUser').value,
             password: document.getElementById('instancePassword').value,
-            port: document.getElementById('instancePort').value || null
+            port: document.getElementById('instancePort').value || null,
+            desktop_env: document.getElementById('desktopEnv').value
         };
 
         const logContainer = document.getElementById('logContainer');
@@ -481,45 +491,23 @@
 
     // Bulk operations
     async function startAllInstances() {
-        const stoppedInstances = Object.entries(instances).filter(([name, instance]) => instance.status !== 'running');
-
-        if (stoppedInstances.length === 0) {
-            showToast('All instances are already running', 'info');
-            return;
+        try {
+            const result = await apiCall('/api/instances/start_all', { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error starting all instances:', error);
         }
-
-        for (const [name, instance] of stoppedInstances) {
-            try {
-                const apiName = instance.instance_name || name;
-                await apiCall(`/api/instances/${apiName}/start`, { method: 'POST' });
-            } catch (error) {
-                console.error(`Error starting ${name}:`, error);
-            }
-        }
-
-        showToast(`Started ${stoppedInstances.length} instances`, 'success');
-        await loadInstances();
     }
 
     async function stopAllInstances() {
-        const runningInstances = Object.entries(instances).filter(([name, instance]) => instance.status === 'running');
-
-        if (runningInstances.length === 0) {
-            showToast('No running instances to stop', 'info');
-            return;
+        try {
+            const result = await apiCall('/api/instances/stop_all', { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error stopping all instances:', error);
         }
-
-        for (const [name, instance] of runningInstances) {
-            try {
-                const apiName = instance.instance_name || name;
-                await apiCall(`/api/instances/${apiName}/stop`, { method: 'POST' });
-            } catch (error) {
-                console.error(`Error stopping ${name}:`, error);
-            }
-        }
-
-        showToast(`Stopped ${runningInstances.length} instances`, 'success');
-        await loadInstances();
     }
 
     function scaleInstances() {
@@ -551,24 +539,13 @@
             return;
         }
 
-        const stoppedInstances = Object.entries(instances).filter(([name, instance]) => instance.status !== 'running');
-
-        if (stoppedInstances.length === 0) {
-            showToast('No stopped instances to cleanup', 'info');
-            return;
+        try {
+            const result = await apiCall('/api/instances/remove_all', { method: 'POST' });
+            showToast(result.message, 'success');
+            await loadInstances();
+        } catch (error) {
+            console.error('Error cleaning up instances:', error);
         }
-
-        for (const [name, instance] of stoppedInstances) {
-            try {
-                const apiName = instance.instance_name || name;
-                await apiCall(`/api/instances/${apiName}/remove`, { method: 'DELETE' });
-            } catch (error) {
-                console.error(`Error removing ${name}:`, error);
-            }
-        }
-
-        showToast(`Cleaned up ${stoppedInstances.length} instances`, 'success');
-        await loadInstances();
     }
 
 </script>

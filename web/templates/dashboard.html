@@ -152,18 +152,18 @@
                         <td>
                             <div class="btn-group" role="group">
                                 {% if container.status == 'running' %}
-                                    <button class="btn btn-sm btn-warning" onclick="stopContainer('{{ container.name }}')">
+                                    <button class="btn btn-sm btn-warning" data-name="{{ container.name }}">
                                         <i class="fas fa-stop"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-info" onclick="restartContainer('{{ container.name }}')">
+                                    <button class="btn btn-sm btn-info" data-name="{{ container.name }}">
                                         <i class="fas fa-redo"></i>
                                     </button>
                                 {% else %}
-                                    <button class="btn btn-sm btn-success" onclick="startContainer('{{ container.name }}')">
+                                    <button class="btn btn-sm btn-success" data-name="{{ container.name }}">
                                         <i class="fas fa-play"></i>
                                     </button>
                                 {% endif %}
-                                <button class="btn btn-sm btn-secondary" onclick="viewLogs('{{ container.name }}')">
+                                <button class="btn btn-sm btn-secondary" data-name="{{ container.name }}">
                                     <i class="fas fa-file-alt"></i>
                                 </button>
                             </div>
@@ -204,6 +204,10 @@
     // Initialize charts
     document.addEventListener('DOMContentLoaded', function() {
         initializeCharts();
+        // Request initial stats
+        socket.on('connect', function() {
+            socket.emit('request_stats');
+        });
     });
     
     function initializeCharts() {
@@ -342,46 +346,21 @@
         };
     }
     
-    // Container management functions
-    async function startContainer(name) {
-        try {
-            const result = await apiCall(`/api/container/${name}/start`, { method: 'POST' });
-            showToast(result.message, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } catch (error) {
-            console.error('Error starting container:', error);
+    document.getElementById('containersTable').addEventListener('click', function(e) {
+        const target = e.target.closest('button');
+        if (!target) return;
+
+        const containerName = target.dataset.name;
+
+        if (target.classList.contains('btn-success')) {
+            startContainer(containerName);
+        } else if (target.classList.contains('btn-warning')) {
+            stopContainer(containerName);
+        } else if (target.classList.contains('btn-info')) {
+            restartContainer(containerName);
+        } else if (target.classList.contains('btn-secondary')) {
+            viewLogs(containerName);
         }
-    }
-    
-    async function stopContainer(name) {
-        try {
-            const result = await apiCall(`/api/container/${name}/stop`, { method: 'POST' });
-            showToast(result.message, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } catch (error) {
-            console.error('Error stopping container:', error);
-        }
-    }
-    
-    async function restartContainer(name) {
-        try {
-            const result = await apiCall(`/api/container/${name}/restart`, { method: 'POST' });
-            showToast(result.message, 'success');
-            setTimeout(() => location.reload(), 1000);
-        } catch (error) {
-            console.error('Error restarting container:', error);
-        }
-    }
-    
-    async function viewLogs(name) {
-        try {
-            const result = await apiCall(`/api/container/${name}/logs`);
-            document.getElementById('logsContent').textContent = result.logs;
-            const modal = new bootstrap.Modal(document.getElementById('logsModal'));
-            modal.show();
-        } catch (error) {
-            console.error('Error fetching logs:', error);
-        }
-    }
+    });
 </script>
 {% endblock %}

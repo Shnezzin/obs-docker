@@ -1,0 +1,11 @@
+{
+    "obs-audio-monitor": {
+        "name": "obs-audio-monitor",
+        "version": "1.0.0",
+        "status": "installed",
+        "description": "A plugin from https://github.com/exeldro/obs-audio-monitor",
+        "author": "Unknown",
+        "configurable": false,
+        "config": {}
+    }
+}

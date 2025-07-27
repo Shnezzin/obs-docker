@@ -43,7 +43,7 @@
                                     <i class="fas fa-video text-primary"></i> OBS WebRTC
                                 </h6>
                                 <p class="card-text small">WebRTC streaming support for OBS Studio</p>
-                                <button class="btn btn-sm btn-primary" onclick="installPopularPlugin('obs-webrtc')">
+                                <button class="btn btn-sm btn-primary" onclick="installPopularPlugin('https://github.com/obsproject/obs-webrtc.git')">
                                     Install
                                 </button>
                             </div>
@@ -56,7 +56,7 @@
                                     <i class="fas fa-microphone text-success"></i> Noise Suppression
                                 </h6>
                                 <p class="card-text small">AI-powered noise suppression for audio</p>
-                                <button class="btn btn-sm btn-success" onclick="installPopularPlugin('noise-suppression')">
+                                <button class="btn btn-sm btn-success" onclick="installPopularPlugin('https://github.com/obsproject/obs-studio-webrtc.git')">
                                     Install
                                 </button>
                             </div>
@@ -69,7 +69,33 @@
                                     <i class="fas fa-eye text-info"></i> Source Record
                                 </h6>
                                 <p class="card-text small">Record individual sources separately</p>
-                                <button class="btn btn-sm btn-info" onclick="installPopularPlugin('source-record')">
+                                <button class="btn btn-sm btn-info" onclick="installPopularPlugin('https://github.com/exeldro/obs-source-record.git')">
+                                    Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-danger">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-network-wired text-danger"></i> NOALBS
+                                </h6>
+                                <p class="card-text small">Automated scene switching for OBS</p>
+                                <button class="btn btn-sm btn-danger" onclick="installPopularPlugin('https://github.com/NOALBS/NOALBS.git')">
+                                    Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="card border-danger">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-network-wired text-danger"></i> NOALBS
+                                </h6>
+                                <p class="card-text small">Automated scene switching for OBS</p>
+                                <button class="btn btn-sm btn-danger" onclick="installPopularPlugin('noalbs')">
                                     Install
                                 </button>
                             </div>
@@ -92,20 +118,51 @@
             <div class="modal-body">
                 <form id="installPluginForm">
                     <div class="mb-3">
-                        <label for="pluginName" class="form-label">Plugin Name</label>
-                        <input type="text" class="form-control" id="pluginName" required>
-                        <div class="form-text">Enter the plugin name or GitHub repository URL</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="pluginVersion" class="form-label">Version (Optional)</label>
-                        <input type="text" class="form-control" id="pluginVersion" placeholder="latest">
-                        <div class="form-text">Leave empty for latest version</div>
+                        <label for="pluginUrl" class="form-label">Plugin URL</label>
+                        <input type="url" class="form-control" id="pluginUrl" required placeholder="https://github.com/user/repo">
+                        <div class="form-text">Enter the GitHub repository URL for the plugin.</div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" onclick="installPlugin()">Install</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Config Modal -->
+<div class="modal fade" id="configModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="configModalLabel"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="configModalBody">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveConfigBtn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logModalLabel">Plugin Operation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="logContent" class="bg-dark text-white p-3 rounded" style="max-height: 400px; overflow-y: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -171,9 +228,11 @@
                             <button class="btn btn-sm btn-outline-primary" onclick="updatePlugin('${name}')" title="Update">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
+                            ${plugin.configurable ? `
                             <button class="btn btn-sm btn-outline-info" onclick="configurePlugin('${name}')" title="Configure">
                                 <i class="fas fa-cog"></i>
                             </button>
+                            ` : ''}
                             <button class="btn btn-sm btn-outline-danger" onclick="removePlugin('${name}')" title="Remove">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -202,44 +261,106 @@
             return;
         }
         
-        const pluginName = document.getElementById('pluginName').value;
-        const version = document.getElementById('pluginVersion').value || 'latest';
+        const pluginUrl = document.getElementById('pluginUrl').value;
         
+        const installModal = bootstrap.Modal.getInstance(document.getElementById('installPluginModal'));
+        installModal.hide();
+
+        const logModal = new bootstrap.Modal(document.getElementById('logModal'));
+        const logContent = document.getElementById('logContent');
+        document.getElementById('logModalLabel').innerText = `Installing ${pluginUrl}`;
+        logContent.innerHTML = '';
+        logModal.show();
+
         try {
-            const result = await apiCall('/api/plugins/install', {
+            const response = await fetch('/api/plugins/install', {
                 method: 'POST',
-                body: JSON.stringify({ plugin_name: pluginName, version: version })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': getCSRFToken()
+                },
+                body: JSON.stringify({ plugin_url: pluginUrl })
             });
-            
-            showToast(result.message, 'success');
-            bootstrap.Modal.getInstance(document.getElementById('installPluginModal')).hide();
-            form.reset();
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                logContent.innerHTML += decoder.decode(value, { stream: true });
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+
+            showToast('Plugin installation complete', 'success');
             await loadPlugins();
         } catch (error) {
+            logContent.innerHTML += `\n<span class="text-danger">Error: ${error.message}</span>`;
             console.error('Error installing plugin:', error);
         }
     }
     
     async function installPopularPlugin(pluginName) {
+        const pluginUrl = `https://github.com/obs-community/obs-studio-plugins/${pluginName}`;
+        
+        const logModal = new bootstrap.Modal(document.getElementById('logModal'));
+        const logContent = document.getElementById('logContent');
+        document.getElementById('logModalLabel').innerText = `Installing ${pluginName}`;
+        logContent.innerHTML = '';
+        logModal.show();
+
         try {
-            const result = await apiCall('/api/plugins/install', {
+            const response = await fetch('/api/plugins/install', {
                 method: 'POST',
-                body: JSON.stringify({ plugin_name: pluginName })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': getCSRFToken()
+                },
+                body: JSON.stringify({ plugin_url: pluginUrl })
             });
-            
-            showToast(result.message, 'success');
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                logContent.innerHTML += decoder.decode(value, { stream: true });
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+
+            showToast('Plugin installation complete', 'success');
             await loadPlugins();
         } catch (error) {
+            logContent.innerHTML += `\n<span class="text-danger">Error: ${error.message}</span>`;
             console.error('Error installing plugin:', error);
         }
     }
     
     async function updatePlugin(name) {
+        const logModal = new bootstrap.Modal(document.getElementById('logModal'));
+        const logContent = document.getElementById('logContent');
+        document.getElementById('logModalLabel').innerText = `Updating ${name}`;
+        logContent.innerHTML = '';
+        logModal.show();
+
         try {
-            const result = await apiCall(`/api/plugins/${name}/update`, { method: 'POST' });
-            showToast(result.message, 'success');
+            const response = await fetch(`/api/plugins/${name}/update`, { method: 'POST' });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                logContent.innerHTML += decoder.decode(value, { stream: true });
+                logContent.scrollTop = logContent.scrollHeight;
+            }
+
+            showToast('Plugin update complete', 'success');
             await loadPlugins();
         } catch (error) {
+            logContent.innerHTML += `\n<span class="text-danger">Error: ${error.message}</span>`;
             console.error('Error updating plugin:', error);
         }
     }
@@ -258,9 +379,65 @@
         }
     }
     
-    function configurePlugin(name) {
-        showToast(`Plugin configuration for "${name}" would open here`, 'info');
-        // This would open a plugin-specific configuration interface
+    async function configurePlugin(name) {
+        try {
+            const result = await apiCall(`/api/plugins/${name}/config`);
+            const configData = result.config;
+
+            if (!configData.configurable) {
+                showToast('This plugin is not configurable.', 'info');
+                return;
+            }
+
+            const config = configData.config;
+            const modal = new bootstrap.Modal(document.getElementById('configModal'));
+            const modalBody = document.getElementById('configModalBody');
+            const form = document.createElement('form');
+
+            for (const [key, value] of Object.entries(config)) {
+                const div = document.createElement('div');
+                div.className = 'mb-3';
+                const label = document.createElement('label');
+                label.className = 'form-label';
+                label.innerText = key;
+                const input = document.createElement('input');
+                input.className = 'form-control';
+                input.name = key;
+                input.value = value;
+                div.appendChild(label);
+                div.appendChild(input);
+                form.appendChild(div);
+            }
+
+            modalBody.innerHTML = '';
+            modalBody.appendChild(form);
+
+            document.getElementById('configModalLabel').innerText = `Configure ${name}`;
+            document.getElementById('saveConfigBtn').onclick = () => savePluginConfig(name, form);
+            modal.show();
+
+        } catch (error) {
+            console.error('Error getting plugin configuration:', error);
+        }
+    }
+
+    async function savePluginConfig(name, form) {
+        const formData = new FormData(form);
+        const config = {};
+        for (const [key, value] of formData.entries()) {
+            config[key] = value;
+        }
+
+        try {
+            await apiCall(`/api/plugins/${name}/config`, { 
+                method: 'POST', 
+                body: JSON.stringify(config) 
+            });
+            showToast('Configuration saved successfully', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('configModal')).hide();
+        } catch (error) {
+            console.error('Error saving plugin configuration:', error);
+        }
     }
 </script>
 {% endblock %}

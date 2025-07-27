@@ -14,7 +14,7 @@ services:
     
     ports:
       - "3389:3389"  # RDP port
-            - "8080:8080"  # HTTP port
+      - "8080:8080"  # HTTP port
       - "8443:8443"  # HTTPS port
     
     volumes:

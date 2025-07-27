@@ -391,54 +391,81 @@
     
     async function loadAlerts() {
         const alertsList = document.getElementById('alertsList');
-        
-        // Placeholder alerts
-        const alerts = [
-            { level: 'warning', message: 'High CPU usage detected', time: '2 minutes ago' },
-            { level: 'info', message: 'Container obs-streaming started', time: '5 minutes ago' },
-            { level: 'success', message: 'Backup completed successfully', time: '1 hour ago' }
-        ];
-        
-        alertsList.innerHTML = alerts.map(alert => `
-            <div class="alert alert-${alert.level === 'warning' ? 'warning' : alert.level === 'info' ? 'info' : 'success'} alert-dismissible fade show" role="alert">
-                <i class="fas fa-${alert.level === 'warning' ? 'exclamation-triangle' : alert.level === 'info' ? 'info-circle' : 'check-circle'}"></i>
-                ${alert.message}
-                <small class="d-block mt-1 text-muted">${alert.time}</small>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `).join('');
+        try {
+            const result = await apiCall('/api/monitoring/alerts');
+            const alerts = result.alerts || [];
+            if (alerts.length === 0) {
+                alertsList.innerHTML = '<div class="text-center text-muted py-4">No alerts.</div>';
+                return;
+            }
+            alertsList.innerHTML = alerts.map(alert => `
+                <div class="alert alert-${alert.level} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-${getAlertIcon(alert.level)}"></i>
+                    ${alert.message}
+                    <small class="d-block mt-1 text-muted">${alert.time}</small>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `).join('');
+        } catch (error) {
+            alertsList.innerHTML = '<div class="text-danger">Could not load alerts.</div>';
+        }
     }
-    
+
     async function loadLogs() {
         const logsElement = document.getElementById('systemLogs');
-        
-        // Placeholder logs
-        const logs = [
-            '[2024-01-20 01:00:00] INFO: OBS Docker Manager started',
-            '[2024-01-20 01:00:05] INFO: Monitoring system initialized',
-            '[2024-01-20 01:00:10] INFO: Container obs-streaming health check passed',
-            '[2024-01-20 01:00:15] WARN: High memory usage detected (85%)',
-            '[2024-01-20 01:00:20] INFO: Backup process started',
-            '[2024-01-20 01:00:25] INFO: Plugin manager initialized'
-        ];
-        
-        logsElement.textContent = logs.join('\n');
-        logsElement.scrollTop = logsElement.scrollHeight;
+        try {
+            const result = await apiCall('/api/monitoring/logs');
+            const logs = result.logs || [];
+            if (logs.length === 0) {
+                logsElement.textContent = 'No logs.';
+                return;
+            }
+            logsElement.textContent = logs.join('\n');
+            logsElement.scrollTop = logsElement.scrollHeight;
+        } catch (error) {
+            logsElement.textContent = 'Could not load logs.';
+        }
     }
-    
+
     function refreshAlerts() {
         loadAlerts();
         showToast('Alerts refreshed', 'success');
     }
-    
+
     function refreshLogs() {
         loadLogs();
         showToast('Logs refreshed', 'success');
     }
-    
-    function clearLogs() {
-        document.getElementById('systemLogs').textContent = '';
-        showToast('Logs cleared', 'info');
+
+    async function clearAlerts() {
+        if (!confirm('Are you sure you want to clear all alerts?')) return;
+        try {
+            await apiCall('/api/monitoring/alerts/clear', { method: 'POST' });
+            loadAlerts();
+            showToast('Alerts cleared', 'success');
+        } catch (error) {
+            showToast('Failed to clear alerts', 'danger');
+        }
+    }
+
+    async function clearLogs() {
+        if (!confirm('Are you sure you want to clear all logs?')) return;
+        try {
+            await apiCall('/api/monitoring/logs/clear', { method: 'POST' });
+            loadLogs();
+            showToast('Logs cleared', 'success');
+        } catch (error) {
+            showToast('Failed to clear logs', 'danger');
+        }
+    }
+
+    function getAlertIcon(level) {
+        switch (level) {
+            case 'warning': return 'exclamation-triangle';
+            case 'info': return 'info-circle';
+            case 'success': return 'check-circle';
+            default: return 'bell';
+        }
     }
     
     function setTimeRange(range) {
